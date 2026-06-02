@@ -33,4 +33,19 @@ interface TaskDao {
 
     @Delete
     suspend fun deleteTask(task: Task)
+
+    @Query("SELECT * FROM template_tasks ORDER BY startTime ASC")
+    fun getAllTemplateTasks(): Flow<List<TemplateTask>>
+
+    @Query("SELECT * FROM template_tasks ORDER BY startTime ASC")
+    suspend fun getAllTemplateTasksSync(): List<TemplateTask>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTemplateTask(task: TemplateTask): Long
+
+    @Update
+    suspend fun updateTemplateTask(task: TemplateTask)
+
+    @Delete
+    suspend fun deleteTemplateTask(task: TemplateTask)
 }

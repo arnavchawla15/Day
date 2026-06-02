@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -14,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.example.day.ui.DayViewModel
 import com.example.day.ui.dashboard.DashboardScreen
 import com.example.day.ui.timetable.TimetableScreen
+import com.example.day.ui.template.TemplateScreen
 
 @Composable
 fun MainScreen(
@@ -40,6 +42,12 @@ fun MainScreen(
                     onClick = { selectedTab = 1 },
                     label = { Text("Dashboard") },
                     icon = { Icon(Icons.Default.Star, contentDescription = "Dashboard") }
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    label = { Text("Template") },
+                    icon = { Icon(Icons.Default.List, contentDescription = "Template") }
                 )
             }
         }
@@ -68,6 +76,7 @@ fun MainScreen(
                 when (targetTab) {
                     0 -> TimetableScreen(viewModel = viewModel)
                     1 -> DashboardScreen(viewModel = viewModel)
+                    2 -> TemplateScreen(viewModel = viewModel)
                 }
             }
         }

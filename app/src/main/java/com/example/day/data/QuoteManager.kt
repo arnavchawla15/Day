@@ -79,4 +79,12 @@ class QuoteManager(context: Context) {
             return getPersonalQuote()
         }
     }
+
+    fun isDateInitialized(date: String): Boolean {
+        return prefs.getBoolean("init_date_$date", false)
+    }
+
+    fun setDateInitialized(date: String) {
+        prefs.edit().putBoolean("init_date_$date", true).apply()
+    }
 }
