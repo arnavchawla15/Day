@@ -7,12 +7,20 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,6 +61,16 @@ fun DashboardScreen(
         calculateStreaks(tasksByDate)
     }
 
+    // Warm linear gradient for the current streak card
+    val streakGradient = remember {
+        Brush.linearGradient(
+            colors = listOf(
+                Color(0xFFFE8C00), // Orange
+                Color(0xFFF83600)  // Fiery Red
+            )
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -64,7 +82,9 @@ fun DashboardScreen(
         Text(
             text = "Progress & Insights",
             style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 22.sp,
+            letterSpacing = (-0.5).sp
         )
 
         // Streak Card Row
@@ -74,12 +94,15 @@ fun DashboardScreen(
         ) {
             StatCard(
                 title = "Current Streak",
-                value = "${streakStats.current} 🔥",
+                value = "${streakStats.current} days",
+                icon = Icons.Default.Whatshot,
+                backgroundBrush = streakGradient,
                 modifier = Modifier.weight(1f)
             )
             StatCard(
                 title = "Max Streak",
-                value = "${streakStats.max} 🏆",
+                value = "${streakStats.max} days",
+                icon = Icons.Default.EmojiEvents,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -91,11 +114,13 @@ fun DashboardScreen(
             StatCard(
                 title = "Completion Rate",
                 value = "$completionRate%",
+                icon = Icons.Default.CheckCircle,
                 modifier = Modifier.weight(1f)
             )
             StatCard(
                 title = "Total Tasks",
                 value = "$totalCompletedCount/$totalTasksCount",
+                icon = Icons.Default.List,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -103,7 +128,9 @@ fun DashboardScreen(
         // LeetCode activity grid
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -125,7 +152,7 @@ fun DashboardScreen(
 
                 ActivityGrid(tasksByDate = tasksByDate)
 
-                // Grid Legend
+                // Grid Legend (using rounded squares shape 4.dp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -134,15 +161,15 @@ fun DashboardScreen(
                     val isDark = isSystemInDarkTheme()
                     Text(text = "Less ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                     Spacer(modifier = Modifier.width(2.dp))
-                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(if (isDark) Color(0xFF21262D) else Color(0xFFF5F5F5)))
+                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(4.dp)).background(if (isDark) Color(0xFF21262D) else Color(0xFFF5F5F5)))
                     Spacer(modifier = Modifier.width(2.dp))
-                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(if (isDark) Color(0xFF0E4429) else Color(0xFFE2F1E7)))
+                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(4.dp)).background(if (isDark) Color(0xFF0E4429) else Color(0xFFE2F1E7)))
                     Spacer(modifier = Modifier.width(2.dp))
-                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(if (isDark) Color(0xFF006D32) else Color(0xFF8FE1A2)))
+                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(4.dp)).background(if (isDark) Color(0xFF006D32) else Color(0xFF8FE1A2)))
                     Spacer(modifier = Modifier.width(2.dp))
-                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(if (isDark) Color(0xFF26A641) else Color(0xFF4CAF50)))
+                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(4.dp)).background(if (isDark) Color(0xFF26A641) else Color(0xFF4CAF50)))
                     Spacer(modifier = Modifier.width(2.dp))
-                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(if (isDark) Color(0xFF39D353) else Color(0xFF1B5E20)))
+                    Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(4.dp)).background(if (isDark) Color(0xFF39D353) else Color(0xFF1B5E20)))
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(text = " More", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                 }
@@ -152,7 +179,9 @@ fun DashboardScreen(
         // Quote configuration Card
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -196,7 +225,8 @@ fun DashboardScreen(
                         onValueChange = { customQuoteText = it },
                         label = { Text("Personal Constant Quote") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp)
                     )
 
                     Button(
@@ -204,6 +234,7 @@ fun DashboardScreen(
                             viewModel.updateQuoteSettings(false, customQuoteText)
                         },
                         modifier = Modifier.align(Alignment.End),
+                        shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -221,26 +252,56 @@ fun DashboardScreen(
 fun StatCard(
     title: String,
     value: String,
-    modifier: Modifier = Modifier
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    backgroundBrush: Brush? = null
 ) {
+    val textColor = if (backgroundBrush != null) Color.White else MaterialTheme.colorScheme.onSurface
+    val iconTint = if (backgroundBrush != null) Color.White else MaterialTheme.colorScheme.primary
+
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (backgroundBrush != null) Color.Transparent else MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        val baseModifier = if (backgroundBrush != null) {
+            Modifier.background(backgroundBrush)
+        } else Modifier
+
+        Row(
+            modifier = Modifier
+                .then(baseModifier)
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = title,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-            Text(
-                text = value,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = textColor.copy(alpha = 0.7f)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = value,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = textColor
+                )
+            }
+
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = iconTint,
+                modifier = Modifier
+                    .size(32.dp)
+                    .alpha(0.85f)
             )
         }
     }
@@ -251,9 +312,6 @@ fun ActivityGrid(
     tasksByDate: Map<String, List<Task>>,
     modifier: Modifier = Modifier
 ) {
-    // We will render 16 weeks of completion history
-    // Rows = 7 (Sunday to Saturday)
-    // Columns = 16 (weeks)
     val columnsCount = 16
     val daysCount = columnsCount * 7
 
@@ -303,7 +361,7 @@ fun ActivityGrid(
 
         Spacer(modifier = Modifier.width(8.dp))
 
-        // Grid itself
+        // Grid itself (using rounded squares shape 4.dp)
         Row(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(2.dp)
@@ -329,13 +387,13 @@ fun ActivityGrid(
                         }
 
                         val borderModifier = if (completedCount == 0) {
-                            Modifier.border(0.5.dp, if (isDark) Color(0xFF30363D) else Color(0xFFE0E0E0), RoundedCornerShape(2.dp))
+                            Modifier.border(0.5.dp, if (isDark) Color(0xFF30363D) else Color(0xFFE0E0E0), RoundedCornerShape(4.dp))
                         } else Modifier
 
                         Box(
                             modifier = Modifier
                                 .size(12.dp)
-                                .clip(RoundedCornerShape(2.dp))
+                                .clip(RoundedCornerShape(4.dp))
                                 .background(color)
                                 .then(borderModifier)
                         )
@@ -378,10 +436,7 @@ private fun calculateStreaks(tasksByDate: Map<String, List<Task>>): StreakStats 
         return StreakStats(0, 0)
     }
 
-    // Sort millis descending
-    val sortedCompletedList = completedDates.sortedDescending()
-
-    // Calculate current streak starting from today or yesterday
+    // Sort dates descending
     val todayCal = Calendar.getInstance()
     todayCal.set(Calendar.HOUR_OF_DAY, 0)
     todayCal.set(Calendar.MINUTE, 0)
@@ -400,13 +455,10 @@ private fun calculateStreaks(tasksByDate: Map<String, List<Task>>): StreakStats 
     var currentStreak = 0
     var checkMillis = todayMillis
 
-    // If today is completed, start from today.
-    // If today has no tasks at all, or has tasks but not yet complete, and yesterday is completed, start check from yesterday.
     if (completedDates.contains(todayMillis)) {
         currentStreak = 1
         checkMillis = todayMillis
     } else if (completedDates.contains(yesterdayMillis)) {
-        // If today has no tasks or is incomplete, check yesterday
         currentStreak = 1
         checkMillis = yesterdayMillis
     }

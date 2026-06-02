@@ -1,5 +1,6 @@
 package com.example.day.ui.main
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.example.day.ui.DayViewModel
 import com.example.day.ui.dashboard.DashboardScreen
 import com.example.day.ui.timetable.TimetableScreen
@@ -24,7 +26,8 @@ fun MainScreen(
         modifier = modifier.fillMaxSize(),
         bottomBar = {
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                containerColor = MaterialTheme.colorScheme.background,
+                tonalElevation = 0.dp // Seamless flat design blending with off-white background
             ) {
                 NavigationBarItem(
                     selected = selectedTab == 0,
@@ -46,9 +49,26 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (selectedTab) {
-                0 -> TimetableScreen(viewModel = viewModel)
-                1 -> DashboardScreen(viewModel = viewModel)
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
+                            slideOutHorizontally { width -> -width } + fadeOut()
+                        )
+                    } else {
+                        (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
+                            slideOutHorizontally { width -> width } + fadeOut()
+                        )
+                    }
+                },
+                label = "TabTransition",
+                modifier = Modifier.fillMaxSize()
+            ) { targetTab ->
+                when (targetTab) {
+                    0 -> TimetableScreen(viewModel = viewModel)
+                    1 -> DashboardScreen(viewModel = viewModel)
+                }
             }
         }
     }

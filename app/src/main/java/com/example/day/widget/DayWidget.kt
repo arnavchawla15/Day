@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.glance.text.FontStyle
+import androidx.glance.text.TextDecoration
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.action.ActionParameters
@@ -21,6 +23,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import androidx.glance.appwidget.cornerRadius
 import com.example.day.data.AppDatabase
 import com.example.day.data.QuoteManager
 import java.text.SimpleDateFormat
@@ -38,96 +41,132 @@ class DayWidget : GlanceAppWidget() {
         val quote = quoteManager.getCurrentQuote()
 
         provideContent {
-            Column(
+            Box(
                 modifier = GlanceModifier
                     .fillMaxSize()
-                    .background(ColorProvider(Color.White))
-                    .padding(12.dp),
-                verticalAlignment = Alignment.Top,
-                horizontalAlignment = Alignment.Start
+                    .background(ColorProvider(Color(0xFFFAFAFA))) // Off-white background
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                // Title
-                Text(
-                    text = "Today's Schedule",
-                    style = TextStyle(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = ColorProvider(Color.Black)
-                    )
-                )
-
-                // Quote section
-                if (quote.isNotEmpty()) {
-                    Spacer(modifier = GlanceModifier.height(4.dp))
+                Column(
+                    modifier = GlanceModifier
+                        .fillMaxSize()
+                        .background(ColorProvider(Color.White)) // Card body
+                        .cornerRadius(16.dp)
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    // Title Header
                     Text(
-                        text = "\"$quote\"",
+                        text = "Today's Schedule",
                         style = TextStyle(
-                            fontSize = 10.sp,
-                            color = ColorProvider(Color.Gray)
-                        ),
-                        maxLines = 2
-                    )
-                }
-
-                Spacer(modifier = GlanceModifier.height(8.dp))
-
-                if (tasks.isEmpty()) {
-                    Box(
-                        modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "No tasks scheduled.",
-                            style = TextStyle(
-                                fontSize = 12.sp,
-                                color = ColorProvider(Color.DarkGray)
-                            )
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = ColorProvider(Color(0xFF2C2C2C))
                         )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = GlanceModifier.fillMaxWidth().defaultWeight()
-                    ) {
-                        items(tasks) { task ->
-                            val taskColor = try {
-                                // Extract pastel color and make it slightly translucent for widget
-                                Color(android.graphics.Color.parseColor(task.colorHex))
-                            } catch (e: Exception) {
-                                Color(0xFFE3F2FD) // Default soft blue
-                            }
+                    )
 
-                            Row(
-                                modifier = GlanceModifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .background(ColorProvider(taskColor))
-                                    .padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CheckBox(
-                                    checked = task.isCompleted,
-                                    onCheckedChange = actionRunCallback<ToggleTaskAction>(
-                                        actionParametersOf(ToggleTaskAction.TaskIdKey to task.id)
-                                    )
+                    // Italic quote section
+                    if (quote.isNotEmpty()) {
+                        Spacer(modifier = GlanceModifier.height(6.dp))
+                        Row(
+                            modifier = GlanceModifier
+                                .fillMaxWidth()
+                                .background(ColorProvider(Color(0xFFF5F5F5)))
+                                .cornerRadius(8.dp)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "\"$quote\"",
+                                style = TextStyle(
+                                    fontSize = 10.sp,
+                                    color = ColorProvider(Color(0xFF616161)),
+                                    fontStyle = FontStyle.Italic
+                                ),
+                                maxLines = 2
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = GlanceModifier.height(10.dp))
+
+                    if (tasks.isEmpty()) {
+                        Box(
+                            modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "All tasks completed!",
+                                style = TextStyle(
+                                    fontSize = 12.sp,
+                                    color = ColorProvider(Color(0xFF9E9E9E))
                                 )
-                                Spacer(modifier = GlanceModifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = task.name,
-                                        style = TextStyle(
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = ColorProvider(Color.DarkGray)
-                                        ),
-                                        maxLines = 1
-                                    )
-                                    Text(
-                                        text = "${task.startTime} - ${task.endTime}",
-                                        style = TextStyle(
-                                            fontSize = 10.sp,
-                                            color = ColorProvider(Color.DarkGray.copy(alpha = 0.8f))
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = GlanceModifier.fillMaxWidth().defaultWeight()
+                        ) {
+                            items(tasks) { task ->
+                                val taskColor = try {
+                                    Color(android.graphics.Color.parseColor(task.colorHex))
+                                } catch (e: Exception) {
+                                    Color(0xFFE3F2FD) // Default soft blue
+                                }
+
+                                // 8% tint of color for row background
+                                val bgTint = taskColor.copy(alpha = 0.08f)
+
+                                Row(
+                                    modifier = GlanceModifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .background(ColorProvider(bgTint))
+                                        .cornerRadius(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // 4dp vertical colored block indicator on the left
+                                    Box(
+                                        modifier = GlanceModifier
+                                            .width(4.dp)
+                                            .height(36.dp)
+                                            .background(ColorProvider(taskColor))
+                                    ) {}
+
+                                    Spacer(modifier = GlanceModifier.width(8.dp))
+
+                                    CheckBox(
+                                        checked = task.isCompleted,
+                                        onCheckedChange = actionRunCallback<ToggleTaskAction>(
+                                            actionParametersOf(ToggleTaskAction.TaskIdKey to task.id)
                                         )
                                     )
+
+                                    Spacer(modifier = GlanceModifier.width(8.dp))
+
+                                    Column(
+                                        modifier = GlanceModifier.defaultWeight()
+                                    ) {
+                                        Text(
+                                            text = task.name,
+                                            style = TextStyle(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = ColorProvider(if (task.isCompleted) Color(0xFF9E9E9E) else Color(0xFF2C2C2C)),
+                                                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                                            ),
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = "${task.startTime} - ${task.endTime}",
+                                            style = TextStyle(
+                                                fontSize = 10.sp,
+                                                color = ColorProvider(Color(0xFF757575))
+                                            )
+                                        )
+                                    }
                                 }
                             }
                         }
