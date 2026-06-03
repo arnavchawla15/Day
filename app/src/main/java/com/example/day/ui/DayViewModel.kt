@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.day.data.QuoteManager
 import com.example.day.data.Task
 import com.example.day.data.TaskDao
+import android.content.Context
+import androidx.glance.appwidget.updateAll
 import com.example.day.data.TemplateTask
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +23,8 @@ import java.util.Locale
 @OptIn(ExperimentalCoroutinesApi::class)
 class DayViewModel(
     private val taskDao: TaskDao,
-    val quoteManager: QuoteManager
+    val quoteManager: QuoteManager,
+    private val appContext: Context
 ) : ViewModel() {
 
     val selectedDate = MutableStateFlow(getTodayDateString())
@@ -98,6 +101,7 @@ class DayViewModel(
                     taskDao.insertTask(task)
                 }
                 quoteManager.setDateInitialized(date)
+                updateWidget()
             }
         }
     }
@@ -117,6 +121,7 @@ class DayViewModel(
                 actualDurationMinutes = plannedMin
             )
             taskDao.insertTask(task)
+            updateWidget()
         }
     }
 
@@ -125,6 +130,7 @@ class DayViewModel(
             val actualMin = parseTimeToMinutes(task.endTime) - parseTimeToMinutes(task.startTime)
             val updatedTask = task.copy(actualDurationMinutes = actualMin)
             taskDao.updateTask(updatedTask)
+            updateWidget()
         }
     }
 
@@ -132,12 +138,14 @@ class DayViewModel(
         viewModelScope.launch {
             val updatedTask = task.copy(isCompleted = !task.isCompleted)
             taskDao.updateTask(updatedTask)
+            updateWidget()
         }
     }
 
     fun deleteTask(task: Task) {
         viewModelScope.launch {
             taskDao.deleteTask(task)
+            updateWidget()
         }
     }
 
@@ -176,5 +184,15 @@ class DayViewModel(
         isDailyQuoteEnabled.value = isDaily
         personalQuote.value = personal
         refreshQuote()
+    }
+
+    private fun updateWidget() {
+        viewModelScope.launch {
+            try {
+                com.example.day.widget.DayWidget().updateAll(appContext)
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
     }
 }

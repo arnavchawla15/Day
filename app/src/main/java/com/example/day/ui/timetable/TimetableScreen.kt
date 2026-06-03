@@ -198,11 +198,13 @@ fun TimetableScreen(
                     }
 
                     // Schedule grid lines + tasks blocks column
-                    Box(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .weight(1f)
                             .height(1440.dp) // 24 hours * 60.dp
                     ) {
+                        val parentWidth = maxWidth
+
                         // Draw grid lines (airy & light layout)
                         for (hour in 0..23) {
                             val yOffset = (hour * 60).dp
@@ -216,6 +218,8 @@ fun TimetableScreen(
                         }
 
                         // Overlay Task cards with entrance animations
+                        val layoutParamsMap = remember(tasks) { computeTaskLayouts(tasks) }
+
                         tasks.forEach { task ->
                             val startMin = parseTimeToMinutes(task.startTime)
                             val endMin = parseTimeToMinutes(task.endTime)
@@ -223,6 +227,10 @@ fun TimetableScreen(
 
                             val yOffset = startMin.dp
                             val blockHeight = duration.dp
+
+                            val layoutParams = layoutParamsMap[task.id] ?: LayoutParams(0, 1)
+                            val colWidth = parentWidth / layoutParams.totalCols
+                            val xOffset = colWidth * layoutParams.colIndex
 
                             val parsedBorderColor = remember(task.colorHex) {
                                 val entry = PASTEL_COLORS.find { it.second == task.colorHex || it.first == task.colorHex }
@@ -244,10 +252,10 @@ fun TimetableScreen(
                                 visible = isVisible,
                                 enter = slideInVertically(animationSpec = tween(500)) { it / 2 } + fadeIn(animationSpec = tween(500)),
                                 modifier = Modifier
-                                    .fillMaxWidth()
+                                    .width(colWidth)
                                     .height(blockHeight)
-                                    .offset(y = yOffset)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .offset(x = xOffset, y = yOffset)
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
                             ) {
                                 Card(
                                     shape = RoundedCornerShape(10.dp),
@@ -597,4 +605,86 @@ private fun changeDateOffset(currentDateStr: String, offsetDays: Int, viewModel:
     } catch (e: Exception) {
         // Fallback
     }
+}
+
+private data class LayoutParams(
+    val colIndex: Int,
+    val totalCols: Int
+)
+
+private fun computeTaskLayouts(tasks: List<Task>): Map<Int, LayoutParams> {
+    if (tasks.isEmpty()) return emptyMap()
+
+    val taskMinutes = tasks.associate { task ->
+        val start = parseTimeToMinutes(task.startTime)
+        val end = parseTimeToMinutes(task.endTime)
+        task.id to (start to end)
+    }
+
+    fun overlaps(id1: Int, id2: Int): Boolean {
+        val range1 = taskMinutes[id1] ?: return false
+        val range2 = taskMinutes[id2] ?: return false
+        return !(range1.second <= range2.first || range2.second <= range1.first)
+    }
+
+    val visited = mutableSetOf<Int>()
+    val clusters = mutableListOf<List<Int>>()
+
+    for (task in tasks) {
+        if (task.id in visited) continue
+        
+        val cluster = mutableListOf<Int>()
+        val queue = ArrayDeque<Int>()
+        queue.add(task.id)
+        visited.add(task.id)
+
+        while (queue.isNotEmpty()) {
+            val curr = queue.removeFirst()
+            cluster.add(curr)
+            
+            for (other in tasks) {
+                if (other.id !in visited && overlaps(curr, other.id)) {
+                    visited.add(other.id)
+                    queue.add(other.id)
+                }
+            }
+        }
+        clusters.add(cluster)
+    }
+
+    val layoutMap = mutableMapOf<Int, LayoutParams>()
+    for (cluster in clusters) {
+        val sortedCluster = cluster.sortedWith(compareBy(
+            { taskMinutes[it]?.first ?: 0 },
+            { -((taskMinutes[it]?.second ?: 0) - (taskMinutes[it]?.first ?: 0)) }
+        ))
+
+        val columns = mutableListOf<MutableList<Int>>()
+        
+        for (taskId in sortedCluster) {
+            var placed = false
+            for (i in columns.indices) {
+                val col = columns[i]
+                val overlapsAny = col.any { colTaskId -> overlaps(taskId, colTaskId) }
+                if (!overlapsAny) {
+                    col.add(taskId)
+                    placed = true
+                    break
+                }
+            }
+            
+            if (!placed) {
+                columns.add(mutableListOf(taskId))
+            }
+        }
+
+        val totalCols = columns.size
+        for (colIdx in columns.indices) {
+            for (taskId in columns[colIdx]) {
+                layoutMap[taskId] = LayoutParams(colIdx, totalCols)
+            }
+        }
+    }
+
+    return layoutMap
 }

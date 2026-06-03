@@ -26,7 +26,7 @@ fun MainNavigation() {
   val quoteManager = remember { QuoteManager(context) }
   
   val viewModel: DayViewModel = viewModel {
-    DayViewModel(taskDao, quoteManager)
+    DayViewModel(taskDao, quoteManager, context)
   }
 
   NavDisplay(

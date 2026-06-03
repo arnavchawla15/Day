@@ -12,6 +12,7 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.appwidget.CheckBox
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.updateAll
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.lazy.LazyColumn
@@ -186,13 +187,12 @@ class ToggleTaskAction : ActionCallback {
         val taskId = parameters[TaskIdKey] ?: return
         val db = AppDatabase.getDatabase(context)
         val taskDao = db.taskDao()
-        val allTasks = taskDao.getAllTasksSync()
-        val task = allTasks.find { it.id == taskId } ?: return
+        val task = taskDao.getTaskById(taskId) ?: return
         val updatedTask = task.copy(isCompleted = !task.isCompleted)
         taskDao.updateTask(updatedTask)
         
-        // Refresh the widget instance
-        DayWidget().update(context, glanceId)
+        // Refresh all widget instances immediately
+        DayWidget().updateAll(context)
     }
 
     companion object {
