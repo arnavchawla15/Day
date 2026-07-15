@@ -84,4 +84,6 @@ Contributions are what make the open-source community such an amazing place to l
 
 ## 📝 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+**All Rights Reserved.** 
+
+This project and its source code are proprietary. You may not copy, modify, distribute, or use this code or its underlying ideas without explicit permission from the author.
