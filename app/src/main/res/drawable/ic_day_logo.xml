@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.0"
+        android:scaleY="2.0"
+        android:pivotX="54"
+        android:pivotY="47">
+        <!-- Baseline -->
+        <path
+            android:pathData="M27,62 L81,62"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.6"
+            android:strokeLineCap="round" />
+        <!-- Rising Sun Semicircle -->
+        <path
+            android:pathData="M40,62 A14,14 0 0,1 68,62"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.6"
+            android:strokeLineCap="round" />
+        <!-- 5 Radiating Sun Rays -->
+        <path
+            android:pathData="M54,44.5 L54,32 M62.2,47 L68.2,35.5 M45.8,47 L39.8,35.5 M68.5,52.5 L78.5,45.5 M39.5,52.5 L29.5,45.5"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.6"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Bottom-right soft shadow -->
+    <item
+        android:left="1dp"
+        android:top="2dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#CFD3DC" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <!-- Top-left crisp highlight -->
+    <item
+        android:bottom="1dp"
+        android:right="1dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFF" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    <!-- Elevated surface -->
+    <item
+        android:bottom="1dp"
+        android:left="1dp"
+        android:right="1dp"
+        android:top="1dp">
+        <shape android:shape="rectangle">
+            <solid android:color="#F2F3F7" />
+            <corners android:radius="11dp" />
+            <stroke
+                android:width="0.5dp"
+                android:color="#FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

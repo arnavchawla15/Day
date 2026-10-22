@@ -1,0 +1,190 @@
+package com.example.day.ui.agent
+
+import android.content.Context
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.day.data.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.InputStream
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+
+class DayAgentViewModel(
+    private val taskDao: TaskDao,
+    private val todoDao: TodoDao,
+    private val habitDao: HabitDao,
+    private val noteDao: NoteDao,
+    private val schedulePrefsManager: SchedulePreferencesManager,
+    private val geminiScheduleRepo: GeminiScheduleRepository,
+    private val appContext: Context
+) : ViewModel() {
+
+    private val memoryManager = AgentMemoryManager(appContext)
+    private val toolExecutor = AgentToolExecutor(
+        taskDao = taskDao,
+        todoDao = todoDao,
+        habitDao = habitDao,
+        noteDao = noteDao,
+        schedulePrefsManager = schedulePrefsManager,
+        geminiScheduleRepo = geminiScheduleRepo,
+        memoryManager = memoryManager,
+        appContext = appContext
+    )
+    private val repository = AgentRepository()
+    private val prefs = appContext.getSharedPreferences("day_app_prefs", Context.MODE_PRIVATE)
+
+    private val _messages = MutableStateFlow<List<AgentMessage>>(emptyList())
+    val messages: StateFlow<List<AgentMessage>> = _messages.asStateFlow()
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _pendingToolSummary = MutableStateFlow<String?>(null)
+    val pendingToolSummary: StateFlow<String?> = _pendingToolSummary.asStateFlow()
+
+    init {
+        loadHistory()
+    }
+
+    private fun loadHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = memoryManager.getMessages()
+            _messages.value = list
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            memoryManager.clearHistory()
+            _messages.value = emptyList()
+        }
+    }
+
+    fun sendMessage(userText: String, imageUri: Uri? = null) {
+        val trimmed = userText.trim()
+        if (trimmed.isBlank() && imageUri == null) return
+
+        viewModelScope.launch {
+            val userMsg = AgentMessage(
+                role = "user",
+                content = if (trimmed.isNotBlank()) trimmed else "(Sent an image)",
+                imageUri = imageUri?.toString(),
+                timestamp = System.currentTimeMillis()
+            )
+
+            // Update UI immediately with user message
+            val currentList = _messages.value.toMutableList()
+            currentList.add(userMsg)
+            _messages.value = currentList
+            withContext(Dispatchers.IO) { memoryManager.saveMessages(currentList) }
+
+            _isLoading.value = true
+
+            try {
+                // Read image bytes if present
+                val imageBytes: ByteArray? = if (imageUri != null) {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            appContext.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                } else null
+
+                val apiKey = prefs.getString("gemini_api_key", "") ?: ""
+                val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Calendar.getInstance().time)
+                val snapshot = buildCurrentSnapshot(todayStr)
+                val userContext = memoryManager.getUserContext()
+                val recentHistory = memoryManager.getRecentMessages(12)
+
+                val response = repository.generateAgentReply(
+                    apiKey = apiKey,
+                    recentHistory = recentHistory,
+                    userMessage = trimmed,
+                    imageBytes = imageBytes,
+                    currentDataSnapshot = snapshot,
+                    userContext = userContext
+                )
+
+                // Execute tool calls if any
+                val executedSummaries = mutableListOf<String>()
+                if (response.toolCalls.isNotEmpty()) {
+                    for (toolCall in response.toolCalls) {
+                        _pendingToolSummary.value = "Executing ${toolCall.tool}..."
+                        val result = toolExecutor.executeTool(toolCall, apiKey)
+                        executedSummaries.add(result.summary)
+                    }
+                    _pendingToolSummary.value = null
+                }
+
+                // Add model response
+                val modelMsg = AgentMessage(
+                    role = "model",
+                    content = response.conversationalText,
+                    timestamp = System.currentTimeMillis(),
+                    toolsExecuted = executedSummaries
+                )
+
+                val updatedList = _messages.value.toMutableList()
+                updatedList.add(modelMsg)
+                _messages.value = updatedList
+                withContext(Dispatchers.IO) { memoryManager.saveMessages(updatedList) }
+
+            } catch (e: Exception) {
+                val errorMsg = AgentMessage(
+                    role = "model",
+                    content = "Sorry, I ran into an issue: ${e.localizedMessage ?: "Unknown error"}",
+                    timestamp = System.currentTimeMillis()
+                )
+                val updatedList = _messages.value.toMutableList()
+                updatedList.add(errorMsg)
+                _messages.value = updatedList
+            } finally {
+                _isLoading.value = false
+                _pendingToolSummary.value = null
+            }
+        }
+    }
+
+    private suspend fun buildCurrentSnapshot(todayStr: String): String = withContext(Dispatchers.IO) {
+        val tasks = taskDao.getTasksForDateSync(todayStr)
+        val todos = todoDao.getTodosForWidgetSync(todayStr)
+        val habits = habitDao.getAllHabitsSync()
+        val notes = noteDao.getNotesSync()
+
+        val taskLines = if (tasks.isEmpty()) "None" else tasks.joinToString("; ") {
+            "${it.name} (${it.startTime}-${it.endTime})${if (it.isCompleted) " [COMPLETED]" else ""}"
+        }
+
+        val todoLines = if (todos.isEmpty()) "None" else todos.joinToString("; ") {
+            "${it.title} (due: ${it.dueDate ?: "none"} ${it.dueTime ?: ""}, P${it.priority})${if (it.isCompleted) " [DONE]" else ""}"
+        }
+
+        val habitLines = if (habits.isEmpty()) "None" else habits.joinToString("; ") {
+            "${it.name} (${it.category}, ${it.targetHoursPerDay}h/day)"
+        }
+
+        val noteLines = if (notes.isEmpty()) "None" else notes.take(5).joinToString("; ") {
+            "${it.title}: ${it.content.take(50)}"
+        }
+
+        val now = SimpleDateFormat("EEEE, yyyy-MM-dd HH:mm", Locale.getDefault()).format(Calendar.getInstance().time)
+
+        """
+- Current Date/Time: $now
+- Today's Date: $todayStr
+- Scheduled Tasks Today: $taskLines
+- Active To-dos: $todoLines
+- Tracked Habits: $habitLines
+- Recent Notes: $noteLines
+        """.trimIndent()
+    }
+}

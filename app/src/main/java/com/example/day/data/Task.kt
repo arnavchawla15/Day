@@ -15,5 +15,7 @@ data class Task(
     val templateTaskId: Int? = null,
     val category: String = "General",
     val plannedDurationMinutes: Int = 0,
-    val actualDurationMinutes: Int = 0
+    val actualDurationMinutes: Int = 0,
+    val todoId: Int? = null,
+    val habitId: Int? = null
 )
