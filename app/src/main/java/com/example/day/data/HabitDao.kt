@@ -32,8 +32,20 @@ interface HabitDao {
     @Query("SELECT * FROM habit_logs WHERE habitId = :habitId ORDER BY date DESC")
     fun getLogsForHabit(habitId: Int): Flow<List<HabitLog>>
 
+    @Query("SELECT * FROM habit_logs WHERE habitId = :habitId AND date >= :startDate ORDER BY date DESC")
+    fun getLogsForHabit(habitId: Int, startDate: String): Flow<List<HabitLog>>
+
+    @Query("SELECT date, SUM(durationMinutes) as totalMinutes FROM habit_logs WHERE habitId = :habitId AND date >= :startDate GROUP BY date")
+    fun getDailyTotalsForHabit(habitId: Int, startDate: String): Flow<List<DailyHabitTotal>>
+
+    @Query("SELECT date, SUM(durationMinutes) as totalMinutes FROM habit_logs WHERE habitId = :habitId AND date >= :startDate GROUP BY date")
+    suspend fun getDailyTotalsForHabitSync(habitId: Int, startDate: String): List<DailyHabitTotal>
+
     @Query("SELECT * FROM habit_logs ORDER BY date DESC")
     fun getAllLogs(): Flow<List<HabitLog>>
+
+    @Query("SELECT * FROM habit_logs ORDER BY date DESC")
+    suspend fun getAllLogsSync(): List<HabitLog>
 
     @Query("SELECT * FROM habit_logs WHERE date = :date")
     fun getLogsForDate(date: String): Flow<List<HabitLog>>

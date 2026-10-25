@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HabitLog::class,
         Note::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,6 +50,23 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                val cursor = database.query("PRAGMA table_info(habit_logs)")
+                val columns = mutableSetOf<String>()
+                while (cursor.moveToNext()) {
+                    val colIndex = cursor.getColumnIndex("name")
+                    if (colIndex >= 0) {
+                        columns.add(cursor.getString(colIndex))
+                    }
+                }
+                cursor.close()
+                if (!columns.contains("durationMinutes")) {
+                    database.execSQL("ALTER TABLE habit_logs ADD COLUMN durationMinutes INTEGER NOT NULL DEFAULT 0")
+                }
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -57,7 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "day_database"
                 )
-                .addMigrations(MIGRATION_3_4)
+                .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

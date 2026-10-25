@@ -1,8 +1,15 @@
 package com.example.day.ui.agent
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -25,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,13 +42,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.day.R
 import com.example.day.data.AgentMessage
+import com.example.day.data.ProactiveSuggestion
 import com.example.day.ui.DayViewModel
 import com.example.day.ui.common.NeuButton
 import com.example.day.ui.common.NeuCard
@@ -65,10 +76,112 @@ fun AgentScreen(
     val messages by agentViewModel.messages.collectAsState()
     val isLoading by agentViewModel.isLoading.collectAsState()
     val pendingSummary by agentViewModel.pendingToolSummary.collectAsState()
+    val suggestions by dayViewModel.proactiveSuggestions.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
+
+    // Voice Input State
+    var isRecording by remember { mutableStateOf(false) }
+    var speechRecognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
+
+    fun stopListening() {
+        try {
+            speechRecognizer?.stopListening()
+        } catch (_: Exception) {}
+        isRecording = false
+    }
+
+    fun startListening() {
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            Toast.makeText(context, "Speech recognition not available on this device", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            speechRecognizer?.destroy()
+        } catch (_: Exception) {}
+
+        val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+        val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+
+        recognizer.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {
+                isRecording = true
+            }
+
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {
+                isRecording = false
+            }
+
+            override fun onError(error: Int) {
+                isRecording = false
+                if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                    Toast.makeText(context, "Couldn't hear that, try again", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onResults(results: Bundle?) {
+                isRecording = false
+                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                if (!matches.isNullOrEmpty()) {
+                    val text = matches[0]
+                    inputText = if (inputText.isBlank()) text else "$inputText $text"
+                }
+            }
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                if (!matches.isNullOrEmpty()) {
+                    val text = matches[0]
+                    inputText = text
+                }
+            }
+
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        })
+
+        recognizer.startListening(recognizerIntent)
+        speechRecognizer = recognizer
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            startListening()
+        } else {
+            Toast.makeText(context, "Microphone permission is needed for voice input", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                speechRecognizer?.destroy()
+            } catch (_: Exception) {}
+        }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "mic_pulse")
+    val micScale by infiniteTransition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = if (isRecording) 1.25f else 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(550, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "mic_scale"
+    )
 
     val listState = rememberLazyListState()
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -150,6 +263,21 @@ fun AgentScreen(
                     )
                 }
             }
+        }
+
+        // ── Proactive Suggestions (Phase 3 Feature 2) ────────────────────────
+        if (suggestions.isNotEmpty()) {
+            AgentSuggestionsSection(
+                suggestions = suggestions,
+                primaryColor = primaryColor,
+                onAction = { suggestion ->
+                    val prompt = suggestion.actionData ?: suggestion.message
+                    agentViewModel.sendMessage(prompt)
+                    dayViewModel.dismissSuggestion(suggestion.id)
+                },
+                onDismiss = { id -> dayViewModel.dismissSuggestion(id) },
+                onDismissAll = { dayViewModel.dismissAllSuggestions() }
+            )
         }
 
         // ── Chat Area / Empty State ──────────────────────────────────────────
@@ -256,8 +384,39 @@ fun AgentScreen(
                 .fillMaxWidth()
                 .padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Mic button (Hold or Tap to speak)
+            NeuIconButton(
+                onClick = {
+                    if (isRecording) {
+                        stopListening()
+                    } else {
+                        val hasPermission = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (!hasPermission) {
+                            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        } else {
+                            startListening()
+                        }
+                    }
+                },
+                size = 46.dp,
+                tint = if (isRecording) Color(0xFFFF8800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = if (isRecording) Modifier.graphicsLayer {
+                    scaleX = micScale
+                    scaleY = micScale
+                } else Modifier
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = if (isRecording) "Stop listening" else "Voice input",
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
             // Photo picker button
             NeuIconButton(
                 onClick = {
@@ -653,7 +812,7 @@ private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int,
     val height = options.outHeight
     val width = options.outWidth
     var inSampleSize = 1
-    if (height > reqHeight || width > reqWidth) {
+    if (height > reqWidth || width > reqWidth) {
         val halfHeight = height / 2
         val halfWidth = width / 2
         while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
@@ -661,4 +820,97 @@ private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int,
         }
     }
     return inSampleSize
+}
+
+@Composable
+private fun AgentSuggestionsSection(
+    suggestions: List<ProactiveSuggestion>,
+    primaryColor: Color,
+    onAction: (ProactiveSuggestion) -> Unit,
+    onDismiss: (String) -> Unit,
+    onDismissAll: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "💡 Suggestions",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+
+            TextButton(
+                onClick = onDismissAll,
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+            ) {
+                Text(
+                    text = "Dismiss all",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            suggestions.take(3).forEach { suggestion ->
+                NeuCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 14.dp,
+                    contentPadding = PaddingValues(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = suggestion.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            if (!suggestion.actionLabel.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row {
+                                    NeuButton(
+                                        onClick = { onAction(suggestion) },
+                                        cornerRadius = 8.dp,
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = suggestion.actionLabel,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = primaryColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { onDismiss(suggestion.id) },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Dismiss suggestion",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

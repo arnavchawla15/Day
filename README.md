@@ -1,89 +1,98 @@
-<div align="center">
-  <h1>🌅 Day - The Ultimate Productivity Hub</h1>
-  <p>
-    <strong>A seamless, widget-first Android application that combines Tasks, Todos, Notes, Habits, and a Pomodoro Timer—all powered by AI.</strong>
-  </p>
-</div>
+# Day
+
+A personal daily planner and time-blocking app for Android with a neumorphic UI, home screen widget, habit tracking, and an integrated assistant.
 
 ---
 
-## 🚀 About Day
+## What is Day?
 
-**Day** is not just another to-do list. It's a comprehensive, all-in-one productivity suite built natively for Android using Modern Android Development (MAD) practices. 
+Day is built around a simple idea: your daily schedule, to-do list, habit tracker, and quick notes shouldn't live in four separate apps.
 
-With a strong emphasis on a **Widget-First** experience, **Day** is designed to keep you productive without ever having to open the app. The home screen widgets serve as interactive command centers, and the integrated Gemini AI turns your natural language inputs into fully organized schedules.
+Instead of juggling multiple tools, Day gives you an interactive home screen widget for quick check-ins, a clean time-blocked daily view, and an on-device assistant that can actually manage your schedule for you.
 
-## ✨ Key Features
+---
 
-- **Widget-First Experience**: Fully interactive Glance app widgets for your Daily Agenda, Habit Tracking, and a live Pomodoro Timer. Mark tasks complete and start focus sessions directly from your home screen.
-- **Smart AI Parsing (NLP)**: Powered by Google's Gemini AI. Simply type "Schedule a meeting from 2pm to 3pm and remind me to call mom", and Day will automatically extract the tasks, times, and todos.
-- **Integrated Habit Tracking**: Build routines with dedicated Habit Widgets that allow one-tap completions.
-- **Pomodoro Timer**: A native Pomodoro timer accessible via a Quick Settings tile or Home Screen Widget to keep your deep work sessions undisturbed.
-- **Fully Custom Theming Engine**: Personalize your workspace! Independently customize the exact HEX colors and dark/light modes for the App UI and your Widgets.
-- **Daily Inspiration**: Start your day right with a customizable daily quote system on your main dashboard.
+## Features
 
-## 🛠 Tech Stack
+### 📅 Daily Time-Blocking (Today Tab)
+- Hourly timeline with color-coded task blocks
+- Day navigation (`<` / `>`) to review past days or plan ahead
+- Daily score and completion streak tracking
+- Daily quote (rotating or custom)
 
-Built with cutting-edge Android technologies:
+### ✅ Tasks & Recurring To-Dos (Todo Tab)
+- Priority markers (P1, P2, P3) and due dates
+- Recurring rules: daily, weekly, or custom days (advances automatically upon completion)
+- To-dos with assigned times automatically link into Today's schedule
 
-- **Language**: Kotlin 
-- **UI Toolkit**: Jetpack Compose & Material 3
-- **Widgets**: Jetpack Glance (Compose for App Widgets)
-- **Architecture**: MVVM with Kotlin Coroutines & Flows
-- **Local Persistence**: Room Database & DataStore Preferences
-- **AI Integration**: Google Generative AI SDK (Gemini API)
-- **Build System**: Gradle with Kotlin DSL
+### 🌱 Habit Tracking & Analytics (Habits Tab)
+- Habits at rest stay time-free until scheduled into Today
+- Tap-to-expand habit cards:
+  - **Weekly check**: Monday–Sunday status indicators (`✓` / `·` / `✗`)
+  - **30-Day Heatmap**: Canvas contribution grid showing completions and target hours reached
+  - **Stats**: Current streak, all-time best streak, monthly consistency rate, and average session duration
 
-## 📦 Getting Started
+### 📝 Notes
+- Clean scratchpad for thoughts, meeting notes, or ideas
+- Color-tagged cards with tap-to-edit
+
+### 🤖 Day — The Assistant
+- An integrated assistant that can read and modify your schedule
+- **Tool integration**: Day can add tasks, reschedule conflicts, complete todos, track habits, and save timetable notes directly
+- **Proactive suggestions**: Surfaces actionable nudges (habits at risk after 6 PM, neglected routines, overdue tasks, or morning reminders to plan open days)
+- **Voice input**: Hold or tap to dictate in Indian English (`en-IN`) with real-time speech transcription
+- **Smart NLP input bar**: Type natural sentences like *"Math lecture from 2 to 4pm"* or *"Pay electricity bill tomorrow at 6pm"* to auto-schedule
+- **Cached & token-optimized**: In-memory query caching and trimmed snapshots to keep latency and API usage minimal
+
+### 📱 Home Screen Widget
+- Interactive Jetpack Glance widget
+- Toggle between Today, Todos, and Notes without opening the app
+- Mark tasks or todos complete directly from the home screen
+
+### 🎨 Theming
+- Neumorphic soft-shadow interface
+- Independent color selection for the app and the widget (including deep dark mode `#363636` and custom hex accents)
+
+---
+
+## Tech Stack
+
+- **Language**: Kotlin
+- **UI**: Jetpack Compose & Material 3
+- **Widgets**: Jetpack Glance (AppWidget)
+- **Database**: Room Database (v5 with migrations)
+- **Concurrency**: Coroutines & StateFlow
+- **Voice**: Android SpeechRecognizer
+- **AI**: Google Generative AI (Gemini Flash API)
+- **Build**: Gradle Kotlin DSL, Min SDK 24, Target SDK 36
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- Android Studio (Latest version)
+- Android Studio Ladybug / Meerkat or newer
 - JDK 17
-- An Android Device or Emulator (API 26+)
+- Android device or emulator running API 24+
 
-### Installation
+### Build & Run
+```bash
+git clone https://github.com/arnavchawla15/Day.git
+cd Day
+./gradlew assembleDebug
+```
+Or open the project in Android Studio and hit **Run**.
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/arnavchawla15/Day.git
-   ```
-2. **Open the project:**
-   Open the `Day` directory in Android Studio.
-3. **Sync and Build:**
-   Allow Gradle to sync, then hit the **Run** button to install the app on your device or emulator.
+### Gemini API Key (Optional)
+The core app (tasks, todos, habits, notes, widgets, NLP regex fallback) works fully offline.
 
-### Setting up the Gemini AI
-To unlock the natural language smart-input feature, you will need a free Gemini API key:
-1. Head over to [Google AI Studio](https://aistudio.google.com/) and generate a free API key.
-2. Open the **Day** app, navigate to **Settings**.
-3. Paste your API key into the Gemini API Key section.
+To enable the Day assistant and AI scheduling:
+1. Get a free API key from [Google AI Studio](https://aistudio.google.com/).
+2. Open Day → tap the palette / settings icon in the top bar.
+3. Paste your key in the **Gemini API Key** field.
 
-## 🎨 Customizing Themes
+---
 
-Day features a highly advanced theming engine that separates your App theme from your Widget theme.
-- Navigate to **Settings > App Theme** or **Settings > Widget Theme**.
-- Choose from 20 beautifully curated pastel aesthetics.
-- Or, select **Custom** and enter your own specific Hex code (e.g., `#FF5722`) to instantly generate a full Material 3 color palette matching your choice!
+## License
 
-## 📱 Project Structure
-
-- `day/app/src/main/java/com/example/day` - Core logic, ViewModels, and App UI.
-- `day/app/src/main/java/com/example/day/widget` - Jetpack Glance Widget implementations (DayWidget, HabitWidget, PomodoroWidget).
-- `day/app/src/main/java/com/example/day/data` - Room Database DAOs and entities.
-- `day/app/src/main/java/com/example/day/theme` - Dynamic Custom Theme generator logic.
-
-## 🤝 Contributing
-
-Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📝 License
-
-**All Rights Reserved.** 
-
-This project and its source code are proprietary. You may not copy, modify, distribute, or use this code or its underlying ideas without explicit permission from the author.
+All Rights Reserved.

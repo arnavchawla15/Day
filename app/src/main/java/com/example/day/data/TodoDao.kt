@@ -28,6 +28,9 @@ interface TodoDao {
     @Query("SELECT * FROM todos WHERE (dueDate = :date OR dueDate IS NULL OR dueDate < :date) ORDER BY isCompleted ASC, priority ASC, dueDate ASC")
     suspend fun getTodosForWidgetSync(date: String): List<Todo>
 
+    @Query("SELECT * FROM todos WHERE isCompleted = 0 ORDER BY priority ASC, dueDate ASC, id DESC")
+    suspend fun getActiveTodosSync(): List<Todo>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTodo(todo: Todo): Long
 

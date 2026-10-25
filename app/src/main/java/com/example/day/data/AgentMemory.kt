@@ -74,9 +74,38 @@ class AgentMemoryManager(context: Context) {
     }
 
     @Synchronized
-    fun getRecentMessages(limit: Int = 20): List<AgentMessage> {
+    fun getRecentMessages(limit: Int = 10): List<AgentMessage> {
         val all = getMessages()
         return if (all.size > limit) all.takeLast(limit) else all
+    }
+
+    @Synchronized
+    fun getOlderContextSummary(limit: Int = 10): String? {
+        val all = getMessages()
+        if (all.size <= limit) return null
+        val older = all.dropLast(limit)
+        val actions = mutableListOf<String>()
+        val allTools = older.flatMap { it.toolsExecuted }
+        if (allTools.isNotEmpty()) {
+            val habitActions = allTools.count { it.contains("habit", ignoreCase = true) }
+            val taskActions = allTools.count { it.contains("task", ignoreCase = true) || it.contains("schedule", ignoreCase = true) }
+            val todoActions = allTools.count { it.contains("todo", ignoreCase = true) }
+            if (habitActions > 0) actions.add("worked with $habitActions habit(s)")
+            if (taskActions > 0) actions.add("managed $taskActions task(s)")
+            if (todoActions > 0) actions.add("completed/updated $todoActions todo(s)")
+        }
+        val userSnippets = older.filter { it.role == "user" }
+            .map { it.content.replace("\n", " ").trim() }
+            .filter { it.isNotBlank() }
+            .takeLast(3)
+
+        return if (actions.isNotEmpty()) {
+            "Earlier: ${actions.joinToString(", ")}"
+        } else if (userSnippets.isNotEmpty()) {
+            "Earlier discussion: user mentioned ${userSnippets.joinToString("; ") { "'${it.take(30)}'" }}"
+        } else {
+            null
+        }
     }
 
     @Synchronized

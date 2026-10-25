@@ -98,6 +98,12 @@ class DayViewModel(
     val scheduleSnackbarMessage = MutableSharedFlow<String>()
     private val geminiScheduleRepository = GeminiScheduleRepository(appContext)
 
+    // Proactive Suggestions Engine (Phase 3)
+    private val proactiveSuggestionEngine = ProactiveSuggestionEngine(taskDao, todoDao, habitDao)
+    private val suggestionPrefs = appContext.getSharedPreferences("day_proactive_suggestions", Context.MODE_PRIVATE)
+    private val _proactiveSuggestions = MutableStateFlow<List<ProactiveSuggestion>>(emptyList())
+    val proactiveSuggestions: StateFlow<List<ProactiveSuggestion>> = _proactiveSuggestions.asStateFlow()
+
     // Editing State (for overlays or direct deep-links)
     val editTaskId = MutableStateFlow<Int>(-1)
     val editTodo = MutableStateFlow<Todo?>(null)
@@ -129,6 +135,49 @@ class DayViewModel(
 
         // Trigger AI Auto-Schedule on startup (Feature 2D)
         checkAndRunAutoSchedule()
+
+        // Proactive Suggestions check (Phase 3)
+        refreshProactiveSuggestions()
+    }
+
+    fun refreshProactiveSuggestions() {
+        viewModelScope.launch {
+            try {
+                val todayStr = getTodayDateString()
+                val lastDate = suggestionPrefs.getString("dismissed_date", "")
+                if (lastDate != todayStr) {
+                    suggestionPrefs.edit()
+                        .putString("dismissed_date", todayStr)
+                        .putStringSet("dismissed_ids", emptySet())
+                        .apply()
+                }
+                val dismissedIds = suggestionPrefs.getStringSet("dismissed_ids", emptySet()) ?: emptySet()
+                val prefsData = schedulePreferencesManager.getSchedulePreferences()
+                val context = AppContext(
+                    todayDate = todayStr,
+                    wakeUpTime = prefsData.wakeUpTime
+                )
+                val allSuggestions = proactiveSuggestionEngine.generateSuggestions(context)
+                _proactiveSuggestions.value = allSuggestions.filter { !dismissedIds.contains(it.id) }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun dismissSuggestion(suggestionId: String) {
+        val currentDismissed = suggestionPrefs.getStringSet("dismissed_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+        currentDismissed.add(suggestionId)
+        suggestionPrefs.edit().putStringSet("dismissed_ids", currentDismissed).apply()
+        _proactiveSuggestions.value = _proactiveSuggestions.value.filter { it.id != suggestionId }
+    }
+
+    fun dismissAllSuggestions() {
+        val allIds = _proactiveSuggestions.value.map { it.id }.toSet()
+        val currentDismissed = suggestionPrefs.getStringSet("dismissed_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+        currentDismissed.addAll(allIds)
+        suggestionPrefs.edit().putStringSet("dismissed_ids", currentDismissed).apply()
+        _proactiveSuggestions.value = emptyList()
     }
 
     fun saveGeminiApiKey(key: String) {
@@ -539,7 +588,14 @@ class DayViewModel(
             // If linked to a habit, log or unlog habit completion
             if (task.habitId != null) {
                 if (nextState) {
-                    habitDao.insertHabitLog(HabitLog(habitId = task.habitId, date = task.date))
+                    val duration = if (task.actualDurationMinutes > 0) {
+                        task.actualDurationMinutes
+                    } else if (task.plannedDurationMinutes > 0) {
+                        task.plannedDurationMinutes
+                    } else {
+                        (parseTimeToMinutes(task.endTime) - parseTimeToMinutes(task.startTime)).coerceAtLeast(0)
+                    }
+                    habitDao.insertHabitLog(HabitLog(habitId = task.habitId, date = task.date, durationMinutes = duration))
                 } else {
                     habitDao.deleteHabitLog(task.habitId, task.date)
                 }
@@ -711,9 +767,9 @@ class DayViewModel(
         }
     }
 
-    fun logHabitCompletion(habitId: Int, date: String = getTodayDateString()) {
+    fun logHabitCompletion(habitId: Int, date: String = getTodayDateString(), durationMinutes: Int = 0) {
         viewModelScope.launch {
-            habitDao.insertHabitLog(HabitLog(habitId = habitId, date = date))
+            habitDao.insertHabitLog(HabitLog(habitId = habitId, date = date, durationMinutes = durationMinutes))
         }
     }
 

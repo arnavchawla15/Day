@@ -26,5 +26,11 @@ data class HabitLog(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val habitId: Int,
     val date: String,                  // "yyyy-MM-dd" format
+    val durationMinutes: Int = 0,
     val completedAt: Long = System.currentTimeMillis()
+)
+
+data class DailyHabitTotal(
+    val date: String,
+    val totalMinutes: Int
 )

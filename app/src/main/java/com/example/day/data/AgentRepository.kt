@@ -19,6 +19,58 @@ data class AgentResponse(
 
 class AgentRepository {
 
+    private val responseCache = mutableMapOf<String, Pair<String, Long>>()  // query -> (response, timestamp)
+    private val CACHE_TTL = 5 * 60 * 1000L  // 5 minutes
+
+    fun getCachedResponse(query: String): String? {
+        val cached = responseCache[query.lowercase().trim()] ?: return null
+        return if (System.currentTimeMillis() - cached.second < CACHE_TTL) cached.first else null
+    }
+
+    fun cacheResponse(query: String, response: String) {
+        responseCache[query.lowercase().trim()] = Pair(response, System.currentTimeMillis())
+    }
+
+    fun clearCache() {
+        responseCache.clear()
+    }
+
+    fun buildCurrentDataString(
+        todayStr: String,
+        tasksToday: List<Task> = emptyList(),
+        todosNext7Days: List<Todo> = emptyList(),
+        habitsWith14dLogs: List<Pair<Habit, Int>> = emptyList(),
+        last3Notes: List<Note> = emptyList()
+    ): String {
+        val taskLines = if (tasksToday.isEmpty()) "None" else tasksToday.joinToString("; ") {
+            "${it.name} (${it.startTime}-${it.endTime})${if (it.isCompleted) " [COMPLETED]" else ""}"
+        }
+        val todoLines = if (todosNext7Days.isEmpty()) "None" else todosNext7Days.joinToString("; ") {
+            "${it.title} (due: ${it.dueDate ?: "none"} ${it.dueTime ?: ""}, P${it.priority})${if (it.isCompleted) " [DONE]" else ""}"
+        }
+        val habitLines = if (habitsWith14dLogs.isEmpty()) "None" else habitsWith14dLogs.joinToString("; ") { (h, logs14d) ->
+            "${h.name} (${h.category}, ${h.targetHoursPerDay}h/day, $logs14d logs/14d)"
+        }
+        val noteLines = if (last3Notes.isEmpty()) "None" else last3Notes.take(3).joinToString("; ") {
+            "${it.title}: ${it.content.take(50)}"
+        }
+        return """
+- Today's Date: $todayStr
+- Scheduled Tasks Today: $taskLines
+- Active To-dos (next 7 days): $todoLines
+- Tracked Habits (14d history): $habitLines
+- Recent Notes (last 3): $noteLines
+        """.trimIndent()
+    }
+
+    private fun isCacheableQuery(query: String): Boolean {
+        val q = query.lowercase().trim()
+        val nonCacheKeywords = listOf("add", "delete", "remove", "complete", "finish", "done", "reschedule", "change", "cancel", "edit", "update", "create", "new", "set")
+        if (nonCacheKeywords.any { q.contains(it) }) return false
+        val cacheKeywords = listOf("what's on", "whats on", "what is on", "schedule today", "my schedule", "what do i have", "agenda", "today's plan", "todays plan", "show schedule", "show my tasks")
+        return cacheKeywords.any { q.contains(it) }
+    }
+
     companion object {
         private const val TAG = "AgentRepository"
         val TOOLS_REGEX = Regex("```tools\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
@@ -80,17 +132,29 @@ class AgentRepository {
         imageBytes: ByteArray? = null,
         imageMimeType: String = "image/jpeg",
         currentDataSnapshot: String,
-        userContext: UserContext
+        userContext: UserContext,
+        olderContextSummary: String? = null
     ): AgentResponse = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext AgentResponse(
-                conversationalText = "Please configure your Gemini API Key in Settings to enable Day's AI assistant features.",
+                conversationalText = "API configuration issue — check your key in Settings",
                 toolCalls = emptyList()
             )
         }
 
+        // Feature 4A: Response caching for repeated read queries
+        if (imageBytes == null && isCacheableQuery(userMessage)) {
+            val cached = getCachedResponse(userMessage)
+            if (cached != null) {
+                return@withContext AgentResponse(
+                    conversationalText = cached,
+                    toolCalls = emptyList()
+                )
+            }
+        }
+
         try {
-            val systemPrompt = buildSystemPrompt(currentDataSnapshot, userContext)
+            val systemPrompt = buildSystemPrompt(currentDataSnapshot, userContext, olderContextSummary)
             val responseBody = callGeminiApi(
                 apiKey = apiKey.trim(),
                 systemPrompt = systemPrompt,
@@ -102,10 +166,14 @@ class AgentRepository {
 
             if (responseBody != null) {
                 val rawReply = extractTextFromGeminiResponse(responseBody)
-                return@withContext parseGeminiResponse(rawReply)
+                val response = parseGeminiResponse(rawReply)
+                if (response.toolCalls.isEmpty() && isCacheableQuery(userMessage)) {
+                    cacheResponse(userMessage, response.conversationalText)
+                }
+                return@withContext response
             } else {
                 return@withContext AgentResponse(
-                    conversationalText = "Sorry, I couldn't connect to Gemini right now. Please check your internet connection.",
+                    conversationalText = "No connection — check your internet and try again",
                     toolCalls = emptyList()
                 )
             }
@@ -113,18 +181,15 @@ class AgentRepository {
             Log.e(TAG, "Error generating agent reply", e)
             val rawMsg = e.localizedMessage ?: ""
             val friendlyMsg = when {
-                rawMsg.contains("503") || rawMsg.contains("demand") ->
-                    "The AI servers are currently experiencing high demand. Please try again in just a moment!"
-                rawMsg.contains("429") || rawMsg.contains("RESOURCE_EXHAUSTED") ->
-                    "API rate limit reached. Please wait a few seconds and try again."
-                rawMsg.contains("400") || rawMsg.contains("API_KEY_INVALID") ->
-                    "Invalid API key or request format. Please verify your Gemini API key in Settings."
-                e is java.net.SocketTimeoutException || rawMsg.contains("timeout") ->
-                    "Connection timed out. The network might be slow or servers busy — please try again."
-                rawMsg.contains("404") ->
-                    "AI service temporarily unavailable. Please try again shortly."
+                rawMsg.contains("429") || rawMsg.contains("RESOURCE_EXHAUSTED") || rawMsg.contains("rate limit", ignoreCase = true) ->
+                    "Hit the rate limit — wait a minute and try again ⏱️"
+                rawMsg.contains("404") || rawMsg.contains("NOT_FOUND") || rawMsg.contains("API_KEY_INVALID") ->
+                    "API configuration issue — check your key in Settings"
+                e is java.net.SocketTimeoutException || e is java.net.UnknownHostException || e is java.net.ConnectException ||
+                rawMsg.contains("timeout", ignoreCase = true) || rawMsg.contains("network", ignoreCase = true) || rawMsg.contains("No route to host", ignoreCase = true) ->
+                    "No connection — check your internet and try again"
                 else ->
-                    "Error communicating with AI: ${rawMsg.take(120)}"
+                    "Something went wrong — try again in a bit"
             }
             return@withContext AgentResponse(
                 conversationalText = friendlyMsg,
@@ -133,7 +198,11 @@ class AgentRepository {
         }
     }
 
-    private fun buildSystemPrompt(snapshot: String, context: UserContext): String {
+    private fun buildSystemPrompt(snapshot: String, context: UserContext, olderContextSummary: String? = null): String {
+        val olderContextSection = if (!olderContextSummary.isNullOrBlank()) {
+            "\nPrior Conversation Context:\n$olderContextSummary\n"
+        } else ""
+
         return """
 You are "Day", a capable, proactive, and friendly personal assistant and scheduler embedded in the user's Day app.
 You have autonomous control to read and mutate the user's tasks, to-dos, habits, notes, timetable, and daily schedule.
@@ -145,7 +214,7 @@ Your Personality:
 
 Current App Snapshot:
 $snapshot
-
+$olderContextSection
 User Profile & Preferences:
 Timetable: ${if (context.timetableText.isBlank()) "None set" else context.timetableText}
 Preferences: ${if (context.generalPreferences.isBlank()) "Standard" else context.generalPreferences}
@@ -197,11 +266,10 @@ Rules:
         imageMimeType: String
     ): String? {
         val models = listOf(
+            "gemini-2.0-flash",
             "gemini-3.8-flash",
-            "gemini-3.8-flash-lite",
-            "gemini-3.5-flash",
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite"
+            "gemini-3.8-flash-lite"
         )
         var lastException: Exception? = null
 

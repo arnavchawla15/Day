@@ -1,22 +1,32 @@
 package com.example.day.ui.habit
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -48,6 +58,7 @@ fun HabitsScreen(
     val habits by viewModel.habits.collectAsState()
     val logs by viewModel.habitLogs.collectAsState()
 
+    var expandedHabitId by remember { mutableStateOf<Int?>(null) }
     var showAddHabitDialog by remember { mutableStateOf(false) }
     var habitToEdit by remember { mutableStateOf<Habit?>(null) }
     var habitToSchedule by remember { mutableStateOf<Habit?>(null) }
@@ -303,6 +314,10 @@ fun HabitsScreen(
                     HabitItemNeuCard(
                         habit = habit,
                         habitLogs = logs.filter { it.habitId == habit.id },
+                        isExpanded = expandedHabitId == habit.id,
+                        onToggleExpand = {
+                            expandedHabitId = if (expandedHabitId == habit.id) null else habit.id
+                        },
                         onScheduleToday = { habitToSchedule = habit },
                         onEdit = { habitToEdit = habit },
                         onDelete = { viewModel.deleteHabit(habit) }
@@ -387,10 +402,37 @@ private fun calculateHabit30DayPercent(habitLogs: List<HabitLog>): Int {
     return ((distinctDays * 100) / 30).coerceIn(0, 100)
 }
 
+private fun calculateBestStreak(habitLogs: List<HabitLog>): Int {
+    if (habitLogs.isEmpty()) return 0
+    val dates = habitLogs.map { it.date }.distinct().sorted()
+    if (dates.isEmpty()) return 0
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    var bestStreak = 1
+    var currentStreak = 1
+    for (i in 1 until dates.size) {
+        try {
+            val d1 = sdf.parse(dates[i - 1])
+            val d2 = sdf.parse(dates[i])
+            if (d1 != null && d2 != null) {
+                val diffDays = ((d2.time - d1.time) / (1000 * 60 * 60 * 24)).toInt()
+                if (diffDays == 1) {
+                    currentStreak++
+                    if (currentStreak > bestStreak) bestStreak = currentStreak
+                } else if (diffDays > 1) {
+                    currentStreak = 1
+                }
+            }
+        } catch (_: Exception) {}
+    }
+    return bestStreak
+}
+
 @Composable
 private fun HabitItemNeuCard(
     habit: Habit,
     habitLogs: List<HabitLog>,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
     onScheduleToday: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -401,7 +443,9 @@ private fun HabitItemNeuCard(
     val isDoneToday = remember(habitLogs) { habitLogs.any { it.date == todayStr } }
 
     NeuCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggleExpand() },
         cornerRadius = 16.dp,
         contentPadding = PaddingValues(16.dp)
     ) {
@@ -482,7 +526,7 @@ private fun HabitItemNeuCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Stats row (streak / 30d% / avg hours) + "+ Today" button
+            // Stats row (streak / 30d% / avg hours) + "+ Today" button + Expand Chevron
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -550,6 +594,300 @@ private fun HabitItemNeuCard(
                         color = primaryColor
                     )
                 }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Chevron icon indicating expandable
+                IconButton(
+                    onClick = onToggleExpand,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse analytics" else "Expand analytics",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // Expanded Analytics Section
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                HabitAnalyticsExpandedContent(
+                    habit = habit,
+                    habitLogs = habitLogs,
+                    streak = streak
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HabitAnalyticsExpandedContent(
+    habit: Habit,
+    habitLogs: List<HabitLog>,
+    streak: Int
+) {
+    val bestStreak = remember(habitLogs) { calculateBestStreak(habitLogs) }
+    val todayCal = remember { Calendar.getInstance() }
+    val sdf = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    val todayStr = remember(todayCal) { sdf.format(todayCal.time) }
+
+    // This Week calculation (Mon - Sun)
+    val dayNames = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    val weekDates = remember(habitLogs) {
+        val cal = Calendar.getInstance()
+        cal.firstDayOfWeek = Calendar.MONDAY
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val diffToMonday = when (dayOfWeek) {
+            Calendar.SUNDAY -> -6
+            Calendar.MONDAY -> 0
+            else -> Calendar.MONDAY - dayOfWeek
+        }
+        cal.add(Calendar.DAY_OF_YEAR, diffToMonday)
+        (0..6).map {
+            val d = sdf.format(cal.time)
+            cal.add(Calendar.DAY_OF_YEAR, 1)
+            d
+        }
+    }
+    val logDates = remember(habitLogs) { habitLogs.map { it.date }.toSet() }
+
+    // 30-Day Heatmap grid data (5 weeks × 7 days = 35 days)
+    val cellColors = remember(habitLogs, habit.targetHoursPerDay) {
+        val cal = Calendar.getInstance()
+        cal.firstDayOfWeek = Calendar.MONDAY
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val diffToMonday = when (dayOfWeek) {
+            Calendar.SUNDAY -> -6
+            Calendar.MONDAY -> 0
+            else -> Calendar.MONDAY - dayOfWeek
+        }
+        cal.add(Calendar.DAY_OF_YEAR, diffToMonday)
+        // Go back 4 more weeks so we have 5 weeks total ending this week Sunday
+        cal.add(Calendar.DAY_OF_YEAR, -28)
+
+        val targetMinutes = (habit.targetHoursPerDay * 60).toInt()
+
+        (0 until 35).map {
+            val dStr = sdf.format(cal.time)
+            cal.add(Calendar.DAY_OF_YEAR, 1)
+
+            val dayLogs = habitLogs.filter { it.date == dStr }
+            val isCompleted = dayLogs.isNotEmpty()
+            val totalMinutes = dayLogs.sumOf { it.durationMinutes }
+            val exceeded = isCompleted && ((targetMinutes > 0 && totalMinutes > targetMinutes) || (targetMinutes == 0 && totalMinutes > 60))
+
+            when {
+                dStr > todayStr -> Color(0xFFA0AEC0).copy(alpha = 0.15f)
+                exceeded -> Color(0xFFFF8800)
+                isCompleted -> Color(0xFFFF8800).copy(alpha = 0.5f)
+                else -> Color(0xFFA0AEC0).copy(alpha = 0.3f)
+            }
+        }
+    }
+
+    // This Month & Avg Duration stats
+    val sdfMonth = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()) }
+    val currentMonth = remember(todayCal) { sdfMonth.format(todayCal.time) }
+    val dayOfMonth = remember(todayCal) { todayCal.get(Calendar.DAY_OF_MONTH) }
+    val loggedThisMonth = remember(habitLogs, currentMonth) {
+        habitLogs.filter { it.date.startsWith(currentMonth) }.map { it.date }.distinct().size
+    }
+    val monthPct = if (dayOfMonth > 0) ((loggedThisMonth * 100) / dayOfMonth).coerceIn(0, 100) else 0
+    val thisMonthStats = "$loggedThisMonth/$dayOfMonth days ($monthPct%)"
+
+    val avgDurationStr = remember(habitLogs, habit.targetHoursPerDay) {
+        val logsWithDuration = habitLogs.filter { it.durationMinutes > 0 }
+        val avgMinutes = if (logsWithDuration.isNotEmpty()) {
+            logsWithDuration.map { it.durationMinutes }.average()
+        } else {
+            habit.targetHoursPerDay * 60.0
+        }
+        val avgHours = String.format(Locale.getDefault(), "%.1f", avgMinutes / 60.0)
+        "${avgHours}h / session"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp)
+    ) {
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f),
+            thickness = 1.dp
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 1. This Week Section
+        Text(
+            text = "This Week",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            dayNames.forEachIndexed { index, name ->
+                val dStr = weekDates.getOrNull(index) ?: ""
+                val isDone = logDates.contains(dStr)
+                val isFuture = dStr > todayStr
+                val isToday = dStr == todayStr
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = name,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(
+                                when {
+                                    isDone -> Color(0xFF22C55E).copy(alpha = 0.2f)
+                                    isFuture -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f)
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = when {
+                                isDone -> "✓"
+                                isFuture -> "·"
+                                else -> "✗"
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = when {
+                                isDone -> Color(0xFF22C55E)
+                                isFuture -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 2. 30-Day Heatmap Section
+        Text(
+            text = "30-Day Heatmap",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = "Empty = no log, light orange = done, deep orange = exceeded target",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Column {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                modifier = Modifier.padding(bottom = 3.dp)
+            ) {
+                listOf("M", "T", "W", "T", "F", "S", "S").forEach { label ->
+                    Text(
+                        text = label,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(12.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+
+            Canvas(modifier = Modifier.size(width = 102.dp, height = 72.dp)) {
+                val cellSize = 12.dp.toPx()
+                val gap = 3.dp.toPx()
+                val corner = 3.dp.toPx()
+
+                for (row in 0 until 5) {
+                    for (col in 0 until 7) {
+                        val idx = row * 7 + col
+                        if (idx < cellColors.size) {
+                            val color = cellColors[idx]
+                            drawRoundRect(
+                                color = color,
+                                topLeft = Offset(col * (cellSize + gap), row * (cellSize + gap)),
+                                size = Size(cellSize, cellSize),
+                                cornerRadius = CornerRadius(corner, corner)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 3. Stats Summary (Best streak, Current streak, This month, Avg duration)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Best streak: $bestStreak days",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = "Current streak: $streak days",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "This month: $thisMonthStats",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = "Avg duration: $avgDurationStr",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
             }
         }
     }
