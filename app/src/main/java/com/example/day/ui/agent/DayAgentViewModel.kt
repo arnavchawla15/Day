@@ -146,8 +146,10 @@ class DayAgentViewModel(
                 val friendlyMsg = when {
                     rawMsg.contains("429") || rawMsg.contains("RESOURCE_EXHAUSTED") || rawMsg.contains("rate limit", ignoreCase = true) ->
                         "Hit the rate limit — wait a minute and try again ⏱️"
+                    rawMsg.contains("400") || rawMsg.contains("API_KEY_INVALID") ->
+                        "API key is invalid — please check your key in Settings (tap 🎨)"
                     rawMsg.contains("404") || rawMsg.contains("NOT_FOUND") ->
-                        "API configuration issue — check your key in Settings"
+                        "AI service temporarily unavailable — please try again in a moment"
                     e is java.net.SocketTimeoutException || e is java.net.UnknownHostException || e is java.net.ConnectException ||
                     rawMsg.contains("timeout", ignoreCase = true) || rawMsg.contains("network", ignoreCase = true) ->
                         "No connection — check your internet and try again"

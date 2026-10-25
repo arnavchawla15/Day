@@ -85,6 +85,7 @@ fun AgentScreen(
     // Voice Input State
     var isRecording by remember { mutableStateOf(false) }
     var speechRecognizer by remember { mutableStateOf<SpeechRecognizer?>(null) }
+    var textBeforeRecording by remember { mutableStateOf("") }
 
     fun stopListening() {
         try {
@@ -103,12 +104,15 @@ fun AgentScreen(
             speechRecognizer?.destroy()
         } catch (_: Exception) {}
 
+        textBeforeRecording = inputText.trim()
         val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
         val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
+            putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf("en-US", Locale.getDefault().toLanguageTag()))
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         }
 
         recognizer.setRecognitionListener(object : RecognitionListener {
@@ -116,16 +120,22 @@ fun AgentScreen(
                 isRecording = true
             }
 
-            override fun onBeginningOfSpeech() {}
+            override fun onBeginningOfSpeech() {
+                isRecording = true
+            }
+
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
+
             override fun onEndOfSpeech() {
-                isRecording = false
+                // Keep recording state until onResults or onError arrives
             }
 
             override fun onError(error: Int) {
                 isRecording = false
-                if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                if (error != SpeechRecognizer.ERROR_NO_MATCH && 
+                    error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT && 
+                    error != SpeechRecognizer.ERROR_CLIENT) {
                     Toast.makeText(context, "Couldn't hear that, try again", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -134,16 +144,28 @@ fun AgentScreen(
                 isRecording = false
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
-                    val text = matches[0]
-                    inputText = if (inputText.isBlank()) text else "$inputText $text"
+                    val finalSpeech = matches[0].trim()
+                    if (finalSpeech.isNotBlank()) {
+                        inputText = if (textBeforeRecording.isBlank()) {
+                            finalSpeech
+                        } else {
+                            "$textBeforeRecording $finalSpeech"
+                        }
+                    }
                 }
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
-                    val text = matches[0]
-                    inputText = text
+                    val partialSpeech = matches[0].trim()
+                    if (partialSpeech.isNotBlank()) {
+                        inputText = if (textBeforeRecording.isBlank()) {
+                            partialSpeech
+                        } else {
+                            "$textBeforeRecording $partialSpeech"
+                        }
+                    }
                 }
             }
 

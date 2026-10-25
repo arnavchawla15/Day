@@ -71,14 +71,39 @@ class GeminiRepository {
         val key = apiKey.trim()
         if (key.isBlank()) return@withContext Result.failure(Exception("API key cannot be empty"))
 
+        // Fast check using official models list endpoint
+        try {
+            val listUrl = URL("https://generativelanguage.googleapis.com/v1beta/models?key=$key")
+            val listConn = listUrl.openConnection() as HttpURLConnection
+            listConn.requestMethod = "GET"
+            listConn.setRequestProperty("x-goog-api-key", key)
+            listConn.connectTimeout = 8000
+            listConn.readTimeout = 8000
+            val listCode = listConn.responseCode
+            if (listCode in 200..299) {
+                return@withContext Result.success(true)
+            } else if (listCode in 400..403) {
+                val errBody = try {
+                    BufferedReader(InputStreamReader(listConn.errorStream ?: listConn.inputStream)).use { it.readText() }
+                } catch (_: Exception) { "" }
+                val errorMsg = if (errBody.contains("API_KEY_INVALID") || errBody.contains("API key not valid")) {
+                    "Invalid API key. Please check Google AI Studio."
+                } else {
+                    "API key verification failed (HTTP $listCode)"
+                }
+                return@withContext Result.failure(Exception(errorMsg))
+            }
+        } catch (e: Exception) {
+            // If models GET fails due to network or timeout, continue to generateContent cascade
+        }
+
         val models = listOf(
-            "gemini-3.8-flash",
-            "gemini-3.8-flash-lite",
-            "gemini-3.5-flash",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite"
+            "gemini-3.8-flash"
         )
-        var lastErr = "Please check key validity."
+        var lastErr = "Please check your internet connection."
 
         for (model in models) {
             try {
@@ -89,8 +114,8 @@ class GeminiRepository {
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("x-goog-api-key", key)
                 conn.doOutput = true
-                conn.connectTimeout = 7000
-                conn.readTimeout = 7000
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
 
                 val jsonBody = JSONObject().apply {
                     val contents = org.json.JSONArray().apply {
@@ -116,7 +141,14 @@ class GeminiRepository {
                 } else if (code == 404 || code == 503 || code == 429 || code == 500) {
                     continue
                 } else {
-                    lastErr = "HTTP Error $code: Please check key validity."
+                    val errBody = try {
+                        BufferedReader(InputStreamReader(conn.errorStream ?: conn.inputStream)).use { it.readText() }
+                    } catch (_: Exception) { "" }
+                    lastErr = if (errBody.contains("API_KEY_INVALID")) {
+                        "Invalid API key. Please check Google AI Studio."
+                    } else {
+                        "HTTP $code: Please check key validity."
+                    }
                 }
             } catch (e: Exception) {
                 lastErr = e.localizedMessage ?: "Network error"
@@ -127,11 +159,11 @@ class GeminiRepository {
 
     private fun callGeminiApi(apiKey: String, input: String): ParsedResult? {
         val models = listOf(
-            "gemini-3.8-flash",
-            "gemini-3.8-flash-lite",
-            "gemini-3.5-flash",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite"
+            "gemini-3.8-flash",
+            "gemini-3.8-flash-lite"
         )
         val now = Calendar.getInstance()
         val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(now.time)

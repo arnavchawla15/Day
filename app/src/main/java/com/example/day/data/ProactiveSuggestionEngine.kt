@@ -169,20 +169,28 @@ class ProactiveSuggestionEngine(
     private fun calculateStreak(logs: List<HabitLog>, todayStr: String, sdf: SimpleDateFormat): Int {
         if (logs.isEmpty()) return 0
         val dates = logs.map { it.date }.distinct().toSet()
-        val cal = Calendar.getInstance()
+        val parsedToday = try { sdf.parse(todayStr) } catch (_: Exception) { null }
+
+        val cal = Calendar.getInstance().apply {
+            if (parsedToday != null) time = parsedToday
+        }
         cal.add(Calendar.DAY_OF_YEAR, -1)
         val yesterdayStr = sdf.format(cal.time)
 
-        val startCal = when {
-            dates.contains(todayStr) -> Calendar.getInstance()
-            dates.contains(yesterdayStr) -> Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+        val streakCal = Calendar.getInstance().apply {
+            if (parsedToday != null) time = parsedToday
+        }
+
+        val activeCal = when {
+            dates.contains(todayStr) -> streakCal
+            dates.contains(yesterdayStr) -> streakCal.apply { add(Calendar.DAY_OF_YEAR, -1) }
             else -> return 0
         }
 
         var streak = 0
-        while (dates.contains(sdf.format(startCal.time))) {
+        while (dates.contains(sdf.format(activeCal.time))) {
             streak++
-            startCal.add(Calendar.DAY_OF_YEAR, -1)
+            activeCal.add(Calendar.DAY_OF_YEAR, -1)
         }
         return streak
     }

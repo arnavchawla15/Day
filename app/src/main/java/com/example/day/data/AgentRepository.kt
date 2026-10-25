@@ -137,7 +137,7 @@ class AgentRepository {
     ): AgentResponse = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext AgentResponse(
-                conversationalText = "API configuration issue — check your key in Settings",
+                conversationalText = "Please enter your Gemini API key in Settings (tap 🎨 in the top bar) to start chatting with Day.",
                 toolCalls = emptyList()
             )
         }
@@ -183,8 +183,10 @@ class AgentRepository {
             val friendlyMsg = when {
                 rawMsg.contains("429") || rawMsg.contains("RESOURCE_EXHAUSTED") || rawMsg.contains("rate limit", ignoreCase = true) ->
                     "Hit the rate limit — wait a minute and try again ⏱️"
-                rawMsg.contains("404") || rawMsg.contains("NOT_FOUND") || rawMsg.contains("API_KEY_INVALID") ->
-                    "API configuration issue — check your key in Settings"
+                rawMsg.contains("400") || rawMsg.contains("API_KEY_INVALID") ->
+                    "API key is invalid — please check your key in Settings (tap 🎨)"
+                rawMsg.contains("404") || rawMsg.contains("NOT_FOUND") ->
+                    "AI service temporarily unavailable — please try again in a moment"
                 e is java.net.SocketTimeoutException || e is java.net.UnknownHostException || e is java.net.ConnectException ||
                 rawMsg.contains("timeout", ignoreCase = true) || rawMsg.contains("network", ignoreCase = true) || rawMsg.contains("No route to host", ignoreCase = true) ->
                     "No connection — check your internet and try again"
@@ -266,9 +268,10 @@ Rules:
         imageMimeType: String
     ): String? {
         val models = listOf(
+            "gemini-1.5-flash",
             "gemini-2.0-flash",
-            "gemini-3.8-flash",
             "gemini-2.5-flash",
+            "gemini-3.8-flash",
             "gemini-3.8-flash-lite"
         )
         var lastException: Exception? = null

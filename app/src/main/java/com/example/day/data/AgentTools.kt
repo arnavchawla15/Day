@@ -489,15 +489,44 @@ class AgentToolExecutor(
             )
         }
 
+        val existingNames = existingTasks.map { it.name.trim().lowercase(Locale.ROOT) }.toSet()
+        val currentDayTasks = existingTasks.toMutableList()
+        var habitsAdded = 0
         var count = 0
+
         for (item in items) {
-            val plannedMin = parseTimeToMinutes(item.endTime) - parseTimeToMinutes(item.startTime)
-            val matchedHabit = if (item.type.equals("habit", ignoreCase = true)) {
-                habits.firstOrNull { it.name.contains(item.name, ignoreCase = true) }
+            val cleanName = item.name.trim()
+            if (existingNames.contains(cleanName.lowercase(Locale.ROOT))) continue
+
+            val itemStartMin = parseTimeToMinutes(item.startTime)
+            val itemEndMin = parseTimeToMinutes(item.endTime)
+            if (itemEndMin <= itemStartMin) continue
+
+            // Avoid overlap with any existing or already added tasks
+            val hasOverlap = currentDayTasks.any { task ->
+                val tStart = parseTimeToMinutes(task.startTime)
+                val tEnd = parseTimeToMinutes(task.endTime)
+                maxOf(tStart, itemStartMin) < minOf(tEnd, itemEndMin)
+            }
+            if (hasOverlap) continue
+
+            val isHabit = item.type.equals("habit", ignoreCase = true)
+            if (isHabit) {
+                if (habitsAdded >= 2) continue
+                val alreadyHasHabit = currentDayTasks.any {
+                    it.name.equals(cleanName, ignoreCase = true) ||
+                    (item.habitName != null && it.name.equals(item.habitName, ignoreCase = true))
+                }
+                if (alreadyHasHabit) continue
+            }
+
+            val plannedMin = itemEndMin - itemStartMin
+            val matchedHabit = if (isHabit) {
+                habits.firstOrNull { it.name.contains(cleanName, ignoreCase = true) }
             } else null
 
             val task = Task(
-                name = item.name,
+                name = cleanName,
                 startTime = item.startTime,
                 endTime = item.endTime,
                 colorHex = matchedHabit?.colorHex ?: "#436B52",
@@ -509,6 +538,8 @@ class AgentToolExecutor(
                 habitId = matchedHabit?.id
             )
             taskDao.insertTask(task)
+            currentDayTasks.add(task)
+            if (isHabit) habitsAdded++
             count++
         }
 

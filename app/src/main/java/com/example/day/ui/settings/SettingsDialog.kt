@@ -37,6 +37,10 @@ import com.example.day.theme.isValidHexColor
 import com.example.day.theme.normalizeHex
 import com.example.day.theme.parseHexColor
 import com.example.day.ui.DayViewModel
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import com.example.day.theme.neuInset
+import com.example.day.ui.common.isAppDark
 import com.example.day.ui.common.NeuButton
 import com.example.day.ui.common.NeuCard
 import com.example.day.ui.common.NeuIconButton
@@ -509,22 +513,55 @@ fun SettingsDialog(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            NeuTextField(
-                                value = apiKeyInput,
-                                onValueChange = { apiKeyInput = it },
-                                placeholder = "Paste Gemini API Key (e.g. AIzaSy...)",
-                                singleLine = true,
-                                trailingIcon = {
-                                    IconButton(onClick = { isApiKeyVisible = !isApiKeyVisible }) {
+                            // Neumorphic Inset API Key Field with working Hide/Show Password Masking
+                            val isDark = isAppDark()
+                            val shape = RoundedCornerShape(16.dp)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .neuInset(cornerRadius = 16.dp, isDark = isDark, blurRadius = 6.dp, offset = 2.dp)
+                                    .clip(shape)
+                                    .background(MaterialTheme.colorScheme.surface, shape)
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        if (apiKeyInput.isEmpty()) {
+                                            Text(
+                                                text = "Paste Gemini API Key (e.g. AIzaSy...)",
+                                                style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            )
+                                        }
+                                        BasicTextField(
+                                            value = apiKeyInput,
+                                            onValueChange = { apiKeyInput = it },
+                                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
+                                            singleLine = true,
+                                            visualTransformation = if (isApiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                            cursorBrush = SolidColor(primaryColor),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    IconButton(
+                                        onClick = { isApiKeyVisible = !isApiKeyVisible },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
                                         Icon(
                                             imageVector = if (isApiKeyVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
-                                            contentDescription = "Toggle key visibility",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            contentDescription = if (isApiKeyVisible) "Hide API key" else "Show API key",
+                                            tint = if (isApiKeyVisible) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     }
                                 }
-                            )
+                            }
 
                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -535,17 +572,19 @@ fun SettingsDialog(
                                 // Test Key Button
                                 NeuButton(
                                     onClick = {
-                                        if (apiKeyInput.isBlank()) {
+                                        val trimmedKey = apiKeyInput.trim()
+                                        if (trimmedKey.isBlank()) {
                                             Toast.makeText(context, "Please enter an API key first", Toast.LENGTH_SHORT).show()
                                             return@NeuButton
                                         }
                                         isTestingApiKey = true
                                         coroutineScope.launch {
-                                            val result = viewModel.validateGeminiKey(apiKeyInput)
+                                            val result = viewModel.validateGeminiKey(trimmedKey)
                                             isTestingApiKey = false
                                             result.fold(
                                                 onSuccess = {
-                                                    Toast.makeText(context, "API Key is valid and working!", Toast.LENGTH_LONG).show()
+                                                    viewModel.saveGeminiApiKey(trimmedKey)
+                                                    Toast.makeText(context, "API Key is valid and saved ✓", Toast.LENGTH_LONG).show()
                                                 },
                                                 onFailure = { error ->
                                                     Toast.makeText(context, "Test failed: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
@@ -567,7 +606,8 @@ fun SettingsDialog(
                                 // Save Key Button
                                 NeuButton(
                                     onClick = {
-                                        viewModel.saveGeminiApiKey(apiKeyInput)
+                                        val trimmedKey = apiKeyInput.trim()
+                                        viewModel.saveGeminiApiKey(trimmedKey)
                                         Toast.makeText(context, "API Key saved successfully", Toast.LENGTH_SHORT).show()
                                     },
                                     modifier = Modifier.weight(1f),

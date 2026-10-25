@@ -63,11 +63,11 @@ class GeminiScheduleRepository(private val context: Context) {
         habits: List<Habit>
     ): String? {
         val models = listOf(
-            "gemini-3.8-flash",
-            "gemini-3.8-flash-lite",
-            "gemini-3.5-flash",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
             "gemini-2.5-flash",
-            "gemini-2.5-flash-lite"
+            "gemini-3.8-flash",
+            "gemini-3.8-flash-lite"
         )
 
         val existingTasksSummary = if (existingTasks.isEmpty()) "None" else {
@@ -83,17 +83,17 @@ class GeminiScheduleRepository(private val context: Context) {
         }
 
         val systemPrompt = """
-You are a personal scheduling assistant for a university student. 
-Your job is to generate a realistic, achievable daily schedule.
+You are a personal scheduling assistant. 
+Your job is to generate a realistic, achievable daily schedule by filling in free gaps around existing commitments.
 
 Rules:
 1. Never schedule anything before wake-up time or after sleep time
-2. Leave at least 30 minutes buffer between tasks
-3. Respect fixed class times from the timetable — these are non-negotiable
-4. Fit in habits the user has specified in their instructions
-5. Include short breaks (15-30 min) after every 2 hours of work
-6. Don't overschedule — a realistic day has 6-8 focused tasks max
-7. If a todo is due today, try to fit it in at a reasonable time
+2. CRITICAL — PRESERVE EXISTING TASKS: The user already has tasks scheduled for today. You MUST NOT overwrite, duplicate, replace, or overlap with any already scheduled task. Schedule NEW items ONLY during open, free time gaps.
+3. Respect fixed class times from the timetable for $dayOfWeek — these are non-negotiable.
+4. HABITS RULE: DO NOT schedule all habits from the Habit Library! Only schedule AT MOST 1 or 2 habits IF AND ONLY IF there is a comfortable open slot. If the user's instructions mention a specific habit, prioritize that one; otherwise do not schedule all habits in a single day.
+5. If an active todo is due today, schedule it in an open slot.
+6. Leave 15-30 min buffer breaks between deep focus blocks.
+7. Don't overschedule — an achievable day has 4 to 6 focused blocks maximum.
 8. Output ONLY valid JSON, no explanation text
 
 Output format:
@@ -122,9 +122,9 @@ User Parameters:
 ${prefs.weeklyTimetable.ifBlank { "No fixed timetable specified." }}
 - User's General Instructions:
 ${prefs.generalInstructions.ifBlank { "No extra instructions." }}
-- User's Habit Library (must match habitName exactly if type='habit'):
+- User's Habit Library (schedule AT MOST 1-2 habits that realistically fit, NEVER schedule all of them):
 $habitsSummary
-- Already Scheduled Tasks for Today (do NOT duplicate or overlap):
+- Already Scheduled Tasks for Today (MUST BE PRESERVED — do NOT duplicate, replace or overlap with these):
 $existingTasksSummary
 - To-Dos Due Today:
 $todayTodosSummary

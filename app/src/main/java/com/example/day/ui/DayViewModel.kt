@@ -377,7 +377,8 @@ class DayViewModel(
                 val currentHabits = habitDao.getAllHabitsSync()
 
                 if (isRegeneration) {
-                    val toDelete = existingTodayTasks.filter { it.todoId == null && it.templateTaskId == null }
+                    // Only remove previous uncompleted auto-generated breaks so user tasks & habits are preserved
+                    val toDelete = existingTodayTasks.filter { it.category == "Break" && !it.isCompleted }
                     toDelete.forEach { taskDao.deleteTask(it) }
                 }
 
@@ -396,6 +397,8 @@ class DayViewModel(
 
                 if (scheduledItems.isNotEmpty()) {
                     val habitMap = currentHabits.associateBy { it.name.trim().lowercase(Locale.ROOT) }
+                    val currentDayTasks = refreshedExistingTasks.toMutableList()
+                    var habitsAdded = 0
 
                     for (item in scheduledItems) {
                         val cleanName = item.name.trim()
@@ -403,13 +406,34 @@ class DayViewModel(
                             continue
                         }
 
+                        val itemStartMin = parseTimeToMinutes(item.startTime)
+                        val itemEndMin = parseTimeToMinutes(item.endTime)
+                        if (itemEndMin <= itemStartMin) continue
+
+                        // Check overlap with any task scheduled for today
+                        val hasOverlap = currentDayTasks.any { task ->
+                            val tStart = parseTimeToMinutes(task.startTime)
+                            val tEnd = parseTimeToMinutes(task.endTime)
+                            maxOf(tStart, itemStartMin) < minOf(tEnd, itemEndMin)
+                        }
+                        if (hasOverlap) continue
+
                         val taskColor = appPrimaryHex.value
 
                         when (item.type.lowercase(Locale.ROOT)) {
                             "habit" -> {
+                                if (habitsAdded >= 2) continue
                                 val matchedHabit = item.habitName?.let { habitMap[it.lowercase(Locale.ROOT)] }
                                     ?: habitMap[cleanName.lowercase(Locale.ROOT)]
-                                val plannedMin = parseTimeToMinutes(item.endTime) - parseTimeToMinutes(item.startTime)
+
+                                // Check if this habit is already present today
+                                val alreadyHasHabit = currentDayTasks.any {
+                                    it.name.equals(cleanName, ignoreCase = true) ||
+                                    (matchedHabit != null && it.habitId == matchedHabit.id)
+                                }
+                                if (alreadyHasHabit) continue
+
+                                val plannedMin = itemEndMin - itemStartMin
                                 val task = Task(
                                     name = cleanName,
                                     startTime = item.startTime,
@@ -423,9 +447,11 @@ class DayViewModel(
                                     actualDurationMinutes = plannedMin
                                 )
                                 taskDao.insertTask(task)
+                                currentDayTasks.add(task)
+                                habitsAdded++
                             }
                             "break" -> {
-                                val plannedMin = parseTimeToMinutes(item.endTime) - parseTimeToMinutes(item.startTime)
+                                val plannedMin = itemEndMin - itemStartMin
                                 val task = Task(
                                     name = "Break 🍵",
                                     startTime = item.startTime,
@@ -438,9 +464,10 @@ class DayViewModel(
                                     actualDurationMinutes = plannedMin
                                 )
                                 taskDao.insertTask(task)
+                                currentDayTasks.add(task)
                             }
                             "class" -> {
-                                val plannedMin = parseTimeToMinutes(item.endTime) - parseTimeToMinutes(item.startTime)
+                                val plannedMin = itemEndMin - itemStartMin
                                 val task = Task(
                                     name = cleanName,
                                     startTime = item.startTime,
@@ -453,9 +480,10 @@ class DayViewModel(
                                     actualDurationMinutes = plannedMin
                                 )
                                 taskDao.insertTask(task)
+                                currentDayTasks.add(task)
                             }
                             else -> {
-                                val plannedMin = parseTimeToMinutes(item.endTime) - parseTimeToMinutes(item.startTime)
+                                val plannedMin = itemEndMin - itemStartMin
                                 val task = Task(
                                     name = cleanName,
                                     startTime = item.startTime,
@@ -468,6 +496,7 @@ class DayViewModel(
                                     actualDurationMinutes = plannedMin
                                 )
                                 taskDao.insertTask(task)
+                                currentDayTasks.add(task)
                             }
                         }
                     }
