@@ -75,6 +75,9 @@ class AgentRepository {
         private const val TAG = "AgentRepository"
         val TOOLS_REGEX = Regex("```tools\\s*([\\s\\S]*?)```", RegexOption.IGNORE_CASE)
 
+        @Volatile
+        private var preferredModel: String = "gemini-3.8-flash"
+
         fun parseGeminiResponse(rawText: String): AgentResponse {
             val match = TOOLS_REGEX.find(rawText)
             if (match != null) {
@@ -183,15 +186,15 @@ class AgentRepository {
             val friendlyMsg = when {
                 rawMsg.contains("429") || rawMsg.contains("RESOURCE_EXHAUSTED") || rawMsg.contains("rate limit", ignoreCase = true) ->
                     "Hit the rate limit — wait a minute and try again ⏱️"
-                rawMsg.contains("400") || rawMsg.contains("API_KEY_INVALID") ->
+                rawMsg.contains("API_KEY_INVALID") || rawMsg.contains("API key not valid") ->
                     "API key is invalid — please check your key in Settings (tap 🎨)"
-                rawMsg.contains("404") || rawMsg.contains("NOT_FOUND") ->
-                    "AI service temporarily unavailable — please try again in a moment"
                 e is java.net.SocketTimeoutException || e is java.net.UnknownHostException || e is java.net.ConnectException ||
                 rawMsg.contains("timeout", ignoreCase = true) || rawMsg.contains("network", ignoreCase = true) || rawMsg.contains("No route to host", ignoreCase = true) ->
                     "No connection — check your internet and try again"
+                rawMsg.contains("404") || rawMsg.contains("NOT_FOUND") ->
+                    "AI service temporarily unavailable — please try again in a moment"
                 else ->
-                    "Something went wrong — try again in a bit"
+                    "AI service temporarily unavailable — please try again in a moment"
             }
             return@withContext AgentResponse(
                 conversationalText = friendlyMsg,
@@ -267,21 +270,38 @@ Rules:
         imageBytes: ByteArray?,
         imageMimeType: String
     ): String? {
-        val models = listOf(
-            "gemini-1.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.5-flash",
+        val allModels = listOf(
             "gemini-3.8-flash",
-            "gemini-3.8-flash-lite"
+            "gemini-3.8-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite"
         )
+        val models = listOf(preferredModel) + (allModels.filter { it != preferredModel })
         var lastException: Exception? = null
 
-        // Consolidate history to guarantee strict user/model turn alternation and avoid sending duplicate latest text
-        val historyClean = recentHistory.filter { it.content != latestUserText }
+        val knownErrorPhrases = listOf(
+            "No connection",
+            "Hit the rate limit",
+            "API key is invalid",
+            "AI service temporarily unavailable",
+            "Something went wrong",
+            "Error communicating with AI",
+            "check your key in Settings",
+            "Please enter your Gemini API key"
+        )
+
+        // Filter out any messages that were failed error notices or blank
+        val validHistory = recentHistory.filter { msg ->
+            val text = msg.content.replace(TOOLS_REGEX, "").trim()
+            text.isNotBlank() && knownErrorPhrases.none { phrase -> text.contains(phrase, ignoreCase = true) }
+        }
+
+        // Build strictly alternating turn list
         val consolidated = mutableListOf<Pair<String, String>>()
         var lastRole: String? = null
 
-        for (msg in historyClean) {
+        for (msg in validHistory) {
             val role = if (msg.role == "model") "model" else "user"
             val text = msg.content.replace(TOOLS_REGEX, "").trim()
             if (text.isBlank()) continue
@@ -295,8 +315,14 @@ Rules:
             }
         }
 
-        // If history ended on a user turn, remove it so alternating turns (model -> user) is preserved
-        if (consolidated.isNotEmpty() && consolidated.last().first == "user") {
+        // Gemini rule 1: First turn in contents MUST be "user"
+        while (consolidated.isNotEmpty() && consolidated.first().first != "user") {
+            consolidated.removeAt(0)
+        }
+
+        // Gemini rule 2: The upcoming turn is "user" (latestUserText),
+        // so history that precedes it MUST end on "model" (or be empty)
+        while (consolidated.isNotEmpty() && consolidated.last().first == "user") {
             consolidated.removeAt(consolidated.size - 1)
         }
 
@@ -309,7 +335,7 @@ Rules:
                 conn.setRequestProperty("Content-Type", "application/json")
                 conn.setRequestProperty("x-goog-api-key", apiKey)
                 conn.doOutput = true
-                conn.connectTimeout = 12000
+                conn.connectTimeout = 15000
                 conn.readTimeout = 30000
 
                 val root = JSONObject()
@@ -323,7 +349,7 @@ Rules:
                 }
                 root.put("system_instruction", systemInstructionObj)
 
-                // Contents (alternating history + current user message)
+                // Contents (strictly alternating history + current user message)
                 val contentsArray = JSONArray()
 
                 for ((role, text) in consolidated) {
@@ -341,7 +367,17 @@ Rules:
                 val latestUserObj = JSONObject().apply {
                     put("role", "user")
                     val parts = JSONArray()
-                    parts.put(JSONObject().put("text", latestUserText))
+
+                    val promptText = if (latestUserText.isBlank()) {
+                        if (imageBytes != null && imageBytes.isNotEmpty()) {
+                            "Please analyze this image, extract any classes, tasks, or schedule details, and add them to my schedule."
+                        } else {
+                            "Hello"
+                        }
+                    } else {
+                        latestUserText
+                    }
+                    parts.put(JSONObject().put("text", promptText))
 
                     if (imageBytes != null && imageBytes.isNotEmpty()) {
                         val base64Data = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
@@ -357,15 +393,10 @@ Rules:
 
                 root.put("contents", contentsArray)
 
-                // Generation Config with low thinking level for fast responses
+                // Fast, reliable generation config
                 val genConfig = JSONObject().apply {
-                    if (model.startsWith("gemini-3")) {
-                        val thinkingConfig = JSONObject().apply {
-                            put("thinkingLevel", "low")
-                        }
-                        put("thinkingConfig", thinkingConfig)
-                    }
                     put("maxOutputTokens", 2048)
+                    put("temperature", 0.7)
                 }
                 root.put("generationConfig", genConfig)
 
@@ -376,6 +407,7 @@ Rules:
 
                 val code = conn.responseCode
                 if (code in 200..299) {
+                    preferredModel = model
                     return BufferedReader(InputStreamReader(conn.inputStream)).use { it.readText() }
                 } else {
                     val errBody = try {

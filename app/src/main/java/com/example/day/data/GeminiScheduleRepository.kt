@@ -63,11 +63,11 @@ class GeminiScheduleRepository(private val context: Context) {
         habits: List<Habit>
     ): String? {
         val models = listOf(
-            "gemini-1.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.5-flash",
             "gemini-3.8-flash",
-            "gemini-3.8-flash-lite"
+            "gemini-3.8-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite"
         )
 
         val existingTasksSummary = if (existingTasks.isEmpty()) "None" else {

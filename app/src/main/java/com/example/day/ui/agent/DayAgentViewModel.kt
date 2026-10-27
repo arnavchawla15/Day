@@ -1,6 +1,8 @@
 package com.example.day.ui.agent
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -67,15 +70,95 @@ class DayAgentViewModel(
         }
     }
 
+    private var lastSentImageUri: Uri? = null
+
+    private fun isRetryIntent(text: String): Boolean {
+        val lower = text.lowercase().trim()
+        return lower in listOf("retry", "retry now", "try again", "re-try", "again", "please retry") ||
+                lower.startsWith("retry ")
+    }
+
+    private fun compressImageForGemini(context: Context, uri: Uri, maxDimension: Int = 1280, quality: Int = 80): ByteArray? {
+        return try {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, options)
+            }
+            val origW = options.outWidth
+            val origH = options.outHeight
+            if (origW <= 0 || origH <= 0) {
+                return context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            }
+
+            var sampleSize = 1
+            while (origW / (sampleSize * 2) >= maxDimension && origH / (sampleSize * 2) >= maxDimension) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            val decodedBitmap = context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, decodeOptions)
+            } ?: return null
+
+            val curW = decodedBitmap.width
+            val curH = decodedBitmap.height
+            val finalBitmap = if (curW > maxDimension || curH > maxDimension) {
+                val scale = maxDimension.toFloat() / maxOf(curW, curH)
+                val targetW = (curW * scale).toInt().coerceAtLeast(1)
+                val targetH = (curH * scale).toInt().coerceAtLeast(1)
+                val scaled = Bitmap.createScaledBitmap(decodedBitmap, targetW, targetH, true)
+                if (scaled != decodedBitmap) {
+                    decodedBitmap.recycle()
+                }
+                scaled
+            } else {
+                decodedBitmap
+            }
+
+            val baos = ByteArrayOutputStream()
+            finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+            finalBitmap.recycle()
+            baos.toByteArray()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            try {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
     fun sendMessage(userText: String, imageUri: Uri? = null) {
         val trimmed = userText.trim()
-        if (trimmed.isBlank() && imageUri == null) return
+        val isRetry = isRetryIntent(trimmed)
+        val effectiveImageUri = imageUri ?: if (isRetry) lastSentImageUri else null
+
+        if (trimmed.isBlank() && effectiveImageUri == null) return
+
+        if (effectiveImageUri != null) {
+            lastSentImageUri = effectiveImageUri
+        }
+
+        val effectiveText = when {
+            trimmed.isNotBlank() && isRetry && effectiveImageUri != null && trimmed.length <= 15 ->
+                "Please analyze the timetable/schedule image I shared and add the classes or tasks to my schedule."
+            trimmed.isNotBlank() -> trimmed
+            effectiveImageUri != null -> "Please analyze this image, extract any classes, tasks, or schedule details, and add them to my schedule."
+            else -> trimmed
+        }
 
         viewModelScope.launch {
+            // Snapshot prior history BEFORE adding the new turn
+            val priorHistory = _messages.value.takeLast(10)
+
             val userMsg = AgentMessage(
                 role = "user",
                 content = if (trimmed.isNotBlank()) trimmed else "(Sent an image)",
-                imageUri = imageUri?.toString(),
+                imageUri = effectiveImageUri?.toString(),
                 timestamp = System.currentTimeMillis()
             )
 
@@ -88,29 +171,25 @@ class DayAgentViewModel(
             _isLoading.value = true
 
             try {
-                // Read image bytes if present
-                val imageBytes: ByteArray? = if (imageUri != null) {
+                // Read & compress image bytes (downsamples to max 1280px JPEG ~150KB for fast, reliable upload)
+                val imageBytes: ByteArray? = if (effectiveImageUri != null) {
                     withContext(Dispatchers.IO) {
-                        try {
-                            appContext.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
-                        } catch (e: Exception) {
-                            null
-                        }
+                        compressImageForGemini(appContext, effectiveImageUri)
                     }
                 } else null
 
-                val apiKey = prefs.getString("gemini_api_key", "") ?: ""
+                val apiKey = prefs.getString("gemini_api_key", "")?.trim() ?: ""
                 val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Calendar.getInstance().time)
                 val snapshot = buildCurrentSnapshot(todayStr)
                 val userContext = memoryManager.getUserContext()
-                val recentHistory = memoryManager.getRecentMessages(10)
                 val olderSummary = memoryManager.getOlderContextSummary(10)
 
                 val response = repository.generateAgentReply(
                     apiKey = apiKey,
-                    recentHistory = recentHistory,
-                    userMessage = trimmed,
+                    recentHistory = priorHistory,
+                    userMessage = effectiveText,
                     imageBytes = imageBytes,
+                    imageMimeType = "image/jpeg",
                     currentDataSnapshot = snapshot,
                     userContext = userContext,
                     olderContextSummary = olderSummary

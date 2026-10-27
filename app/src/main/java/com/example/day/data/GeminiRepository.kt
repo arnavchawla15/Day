@@ -98,10 +98,10 @@ class GeminiRepository {
         }
 
         val models = listOf(
-            "gemini-1.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.5-flash",
-            "gemini-3.8-flash"
+            "gemini-3.8-flash",
+            "gemini-3.8-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-flash"
         )
         var lastErr = "Please check your internet connection."
 
@@ -159,11 +159,11 @@ class GeminiRepository {
 
     private fun callGeminiApi(apiKey: String, input: String): ParsedResult? {
         val models = listOf(
-            "gemini-1.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.5-flash",
             "gemini-3.8-flash",
-            "gemini-3.8-flash-lite"
+            "gemini-3.8-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite"
         )
         val now = Calendar.getInstance()
         val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(now.time)
