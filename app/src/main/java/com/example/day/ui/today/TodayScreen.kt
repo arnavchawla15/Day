@@ -580,9 +580,12 @@ private fun CreateTaskDialog(
                         onConfirm(name.trim(), startTime, endTime)
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
-                Text("Add Task", color = Color.White)
+                Text("Add Task", color = MaterialTheme.colorScheme.onPrimary)
             }
         },
         dismissButton = {

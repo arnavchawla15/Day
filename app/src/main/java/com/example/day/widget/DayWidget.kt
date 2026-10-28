@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
@@ -89,7 +90,8 @@ class DayWidget : GlanceAppWidget() {
         val inactiveTabDrawable = if (isDark) R.drawable.widget_tab_inactive_dark else R.drawable.widget_tab_inactive_light
 
         val textPrimary = if (isDark) Color(0xFFF0F0F0) else Color(0xFF4A5568)
-        val textMuted = if (isDark) Color(0xFFA8A8A8) else Color(0xFFA0AEC0)
+        val textMuted = if (isDark) Color(0xFFC0C0C0) else Color(0xFFA0AEC0)
+        val onAccentColor = if (accentColor.luminance() > 0.40f) Color(0xFF121212) else Color.White
 
         provideContent {
             // Read active section reactively from Glance Preferences State
@@ -194,7 +196,9 @@ class DayWidget : GlanceAppWidget() {
                         } else {
                             GlanceModifier.background(ImageProvider(inactiveTabDrawable))
                         }
-                        val pillTextColor = if (isActive) Color.White else textMuted
+                        val activePillTextColor = onAccentColor
+                        val inactivePillTextColor = if (isDark) Color(0xFFF0F0F0) else Color(0xFF4A5568)
+                        val pillTextColor = if (isActive) activePillTextColor else inactivePillTextColor
 
                         val clickModifier = if (isActive) {
                             GlanceModifier
@@ -284,7 +288,7 @@ class DayWidget : GlanceAppWidget() {
                                                         style = TextStyle(
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = ColorProvider(Color.White)
+                                                            color = ColorProvider(onAccentColor)
                                                         )
                                                     )
                                                 }
@@ -353,7 +357,7 @@ class DayWidget : GlanceAppWidget() {
                                                         style = TextStyle(
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = ColorProvider(Color.White)
+                                                            color = ColorProvider(onAccentColor)
                                                         )
                                                     )
                                                 }
@@ -445,7 +449,7 @@ class DayWidget : GlanceAppWidget() {
                                                         style = TextStyle(
                                                             fontSize = 12.sp,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = ColorProvider(Color.White)
+                                                            color = ColorProvider(onAccentColor)
                                                         )
                                                     )
                                                 }

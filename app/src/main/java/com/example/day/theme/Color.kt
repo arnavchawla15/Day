@@ -181,13 +181,14 @@ fun adaptAccentForLightMode(color: Color, background: Color = NeuLightBackground
 fun colorSchemeFromHex(hexString: String, isDark: Boolean): ColorScheme {
     val parsedColor = parseHexColor(hexString, NeuAccentOrange)
     val accentColor = if (isDark) adaptAccentForDarkMode(parsedColor) else adaptAccentForLightMode(parsedColor)
+    val onPrimaryColor = if (accentColor.luminance() > 0.40f) Color(0xFF121212) else Color.White
 
     return if (isDark) {
         darkColorScheme(
             primary = accentColor,
-            onPrimary = Color.White,
+            onPrimary = onPrimaryColor,
             primaryContainer = accentColor.copy(alpha = 0.25f),
-            onPrimaryContainer = Color.White,
+            onPrimaryContainer = Color(0xFFE8E8E8),
             secondary = NeuDarkTeal,
             onSecondary = Color.Black,
             background = NeuDarkBackground,
@@ -202,7 +203,7 @@ fun colorSchemeFromHex(hexString: String, isDark: Boolean): ColorScheme {
     } else {
         lightColorScheme(
             primary = accentColor,
-            onPrimary = Color.White,
+            onPrimary = onPrimaryColor,
             primaryContainer = accentColor.copy(alpha = 0.15f),
             onPrimaryContainer = accentColor,
             secondary = NeuLightSecondarySurface,

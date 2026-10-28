@@ -1,5 +1,7 @@
 package com.example.day
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.example.day.data.*
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -141,6 +143,10 @@ class Phase3Tests {
         val contrast = com.example.day.theme.calculateContrast(scheme.primary, scheme.surface)
         assertTrue("Contrast between primary and surface must be >= 4.0:1 in dark mode, was $contrast", contrast >= 4.0f)
         assertNotEquals("Primary color must not be equal to surface color", scheme.surface, scheme.primary)
+
+        // Button text / content (onPrimary) must be clearly legible on primary
+        val onPrimaryContrast = com.example.day.theme.calculateContrast(scheme.onPrimary, scheme.primary)
+        assertTrue("onPrimary contrast against primary must be >= 4.5:1 (WCAG AA), was $onPrimaryContrast", onPrimaryContrast >= 4.5f)
     }
 
     @Test
@@ -149,5 +155,27 @@ class Phase3Tests {
         val scheme = com.example.day.theme.colorSchemeFromHex("#436B52", isDark = true)
         val contrast = com.example.day.theme.calculateContrast(scheme.primary, scheme.surface)
         assertTrue("Contrast must be >= 4.0:1 in dark mode, was $contrast", contrast >= 4.0f)
+
+        // Button text / content (onPrimary) must be clearly legible on primary
+        val onPrimaryContrast = com.example.day.theme.calculateContrast(scheme.onPrimary, scheme.primary)
+        assertTrue("onPrimary contrast against primary must be >= 4.5:1 (WCAG AA), was $onPrimaryContrast", onPrimaryContrast >= 4.5f)
+    }
+
+    @Test
+    fun testWidgetButtonContrasts() {
+        // In dark mode with #363636 adapted accent
+        val rawAccent = com.example.day.theme.parseHexColor("#363636")
+        val accent = com.example.day.theme.adaptAccentForDarkMode(rawAccent)
+
+        // Active pill text (Today / Todo / Notes)
+        val activeTextColor = if (accent.luminance() > 0.40f) androidx.compose.ui.graphics.Color(0xFF121212) else androidx.compose.ui.graphics.Color.White
+        val activeContrast = com.example.day.theme.calculateContrast(activeTextColor, accent)
+        assertTrue("Active widget tab text contrast must be >= 4.5:1, was $activeContrast", activeContrast >= 4.5f)
+
+        // Inactive pill text on #2E2E2E (inactiveTabDrawable)
+        val inactiveTabBg = androidx.compose.ui.graphics.Color(0xFF2E2E2E)
+        val inactiveTextColor = androidx.compose.ui.graphics.Color(0xFFF0F0F0)
+        val inactiveContrast = com.example.day.theme.calculateContrast(inactiveTextColor, inactiveTabBg)
+        assertTrue("Inactive widget tab text contrast must be >= 7.0:1 (AAA), was $inactiveContrast", inactiveContrast >= 7.0f)
     }
 }

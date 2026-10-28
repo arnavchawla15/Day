@@ -933,9 +933,12 @@ private fun HabitEditDialog(
                         onSave(name.trim(), category.trim())
                     }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primaryColor,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
-                Text("Save", color = Color.White)
+                Text("Save", color = MaterialTheme.colorScheme.onPrimary)
             }
         },
         dismissButton = {
@@ -1012,9 +1015,12 @@ private fun ScheduleHabitDialog(
         confirmButton = {
             Button(
                 onClick = { onSchedule(startTime, endTime) },
-                colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primaryColor,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
-                Text("Schedule", color = Color.White)
+                Text("Schedule", color = MaterialTheme.colorScheme.onPrimary)
             }
         },
         dismissButton = {

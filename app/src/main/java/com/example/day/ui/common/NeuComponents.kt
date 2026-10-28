@@ -237,7 +237,7 @@ fun NeuCheckbox(
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = "Checked",
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(size * 0.7f)
             )
         }
@@ -439,7 +439,7 @@ fun NeuTimePickerDialog(
                         clockDialColor = MaterialTheme.colorScheme.surfaceVariant,
                         selectorColor = MaterialTheme.colorScheme.primary,
                         periodSelectorSelectedContainerColor = MaterialTheme.colorScheme.primary,
-                        periodSelectorSelectedContentColor = Color.White,
+                        periodSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimary,
                         timeSelectorSelectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
                         timeSelectorSelectedContentColor = MaterialTheme.colorScheme.primary
                     )
@@ -454,9 +454,12 @@ fun NeuTimePickerDialog(
                     onTimeSelected("$hour:$min")
                     onDismiss()
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
-                Text("OK", color = Color.White)
+                Text("OK", color = MaterialTheme.colorScheme.onPrimary)
             }
         },
         dismissButton = {
