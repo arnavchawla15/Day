@@ -133,4 +133,21 @@ class Phase3Tests {
         assertTrue("Should include OVERDUE_TODO", types.contains(SuggestionType.OVERDUE_TODO))
         assertTrue("Should include HABIT_NEGLECTED", types.contains(SuggestionType.HABIT_NEGLECTED))
     }
+
+    @Test
+    fun testDarkModeContrastWithCharcoalHex() {
+        // When user sets app color to #363636, dark mode primary must NOT be #363636 (invisible)
+        val scheme = com.example.day.theme.colorSchemeFromHex("#363636", isDark = true)
+        val contrast = com.example.day.theme.calculateContrast(scheme.primary, scheme.surface)
+        assertTrue("Contrast between primary and surface must be >= 4.0:1 in dark mode, was $contrast", contrast >= 4.0f)
+        assertNotEquals("Primary color must not be equal to surface color", scheme.surface, scheme.primary)
+    }
+
+    @Test
+    fun testDarkModeContrastWithDarkGreen() {
+        // When user sets #436B52 (forest green), dark mode primary must be brightened for visibility
+        val scheme = com.example.day.theme.colorSchemeFromHex("#436B52", isDark = true)
+        val contrast = com.example.day.theme.calculateContrast(scheme.primary, scheme.surface)
+        assertTrue("Contrast must be >= 4.0:1 in dark mode, was $contrast", contrast >= 4.0f)
+    }
 }

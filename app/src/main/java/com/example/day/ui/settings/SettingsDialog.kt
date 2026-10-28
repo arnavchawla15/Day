@@ -36,6 +36,8 @@ import com.example.day.R
 import com.example.day.theme.isValidHexColor
 import com.example.day.theme.normalizeHex
 import com.example.day.theme.parseHexColor
+import com.example.day.theme.adaptAccentForDarkMode
+import com.example.day.theme.adaptAccentForLightMode
 import com.example.day.ui.DayViewModel
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
@@ -292,7 +294,8 @@ fun SettingsDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                val previewColor = parseHexColor(appHexInput, primaryColor)
+                                val rawPreview = parseHexColor(appHexInput, primaryColor)
+                                val previewColor = if (isAppDarkState) adaptAccentForDarkMode(rawPreview) else adaptAccentForLightMode(rawPreview)
                                 Box(
                                     modifier = Modifier
                                         .size(44.dp)
@@ -334,7 +337,7 @@ fun SettingsDialog(
 
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Enter any 6-digit hex color code (e.g. #233C26, #3B82F6).",
+                                text = "Enter any 6-digit hex color code. In dark mode, colors are auto-optimized for contrast on #363636.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -406,7 +409,8 @@ fun SettingsDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                val previewColor = parseHexColor(widgetHexInput, parseHexColor(selectedWidgetHex))
+                                val rawWidgetPreview = parseHexColor(widgetHexInput, parseHexColor(selectedWidgetHex))
+                                val previewColor = if (isWidgetDarkState) adaptAccentForDarkMode(rawWidgetPreview) else adaptAccentForLightMode(rawWidgetPreview)
                                 Box(
                                     modifier = Modifier
                                         .size(44.dp)
@@ -448,7 +452,7 @@ fun SettingsDialog(
 
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Enter any 6-digit hex color code for the widget.",
+                                text = "Enter any 6-digit hex color code for the widget. In dark mode, colors are auto-optimized on #363636.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

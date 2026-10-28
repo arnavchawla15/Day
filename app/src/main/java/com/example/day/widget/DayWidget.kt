@@ -60,7 +60,8 @@ class DayWidget : GlanceAppWidget() {
         val appPrefs = context.getSharedPreferences("day_app_prefs", Context.MODE_PRIVATE)
         val isDark = appPrefs.getBoolean("widget_dark_mode", false)
         val primaryHex = appPrefs.getString("widget_primary_hex", "#436B52") ?: "#436B52"
-        val accentColor = com.example.day.theme.parseHexColor(primaryHex)
+        val rawAccent = com.example.day.theme.parseHexColor(primaryHex)
+        val accentColor = if (isDark) com.example.day.theme.adaptAccentForDarkMode(rawAccent) else com.example.day.theme.adaptAccentForLightMode(rawAccent)
 
         val quoteManager = com.example.day.data.QuoteManager(context)
         val quote = quoteManager.getCurrentQuote()

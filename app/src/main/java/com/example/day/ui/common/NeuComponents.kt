@@ -54,7 +54,7 @@ fun NeuCard(
 ) {
     val isDark = isAppDark()
     val shape = RoundedCornerShape(cornerRadius)
-    val bevelColor = if (isDark) Color(0xFF383A52).copy(alpha = 0.5f) else Color.White.copy(alpha = 0.75f)
+    val bevelColor = if (isDark) Color(0xFF505050).copy(alpha = 0.5f) else Color.White.copy(alpha = 0.75f)
 
     val cardModifier = if (onClick != null) {
         modifier
@@ -77,6 +77,19 @@ fun NeuCard(
 }
 
 /**
+ * Ensures button contents, text, and icons have sufficient contrast against their background surface.
+ */
+fun ensureContrast(color: Color, surface: Color, isDark: Boolean): Color {
+    val contrast = com.example.day.theme.calculateContrast(color, surface)
+    if (contrast >= 3.0f) return color
+    return if (isDark) {
+        com.example.day.theme.adaptAccentForDarkMode(color, surface)
+    } else {
+        com.example.day.theme.adaptAccentForLightMode(color, surface)
+    }
+}
+
+/**
  * NeuButton: Primary action button that extrudes at rest and sinks in when pressed.
  */
 @Composable
@@ -90,6 +103,13 @@ fun NeuButton(
     content: @Composable RowScope.() -> Unit
 ) {
     val isDark = isAppDark()
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val defaultPrimary = MaterialTheme.colorScheme.primary
+    val effectiveContentColor = remember(contentColor, surfaceColor, isDark, defaultPrimary) {
+        if (contentColor == Color.Unspecified) defaultPrimary else contentColor
+    }
+    val readableContentColor = ensureContrast(effectiveContentColor, surfaceColor, isDark)
+
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val shape = RoundedCornerShape(cornerRadius)
@@ -114,7 +134,7 @@ fun NeuButton(
             .padding(contentPadding),
         contentAlignment = Alignment.Center
     ) {
-        CompositionLocalProvider(LocalContentColor provides contentColor) {
+        CompositionLocalProvider(LocalContentColor provides readableContentColor) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
@@ -137,6 +157,9 @@ fun NeuIconButton(
     content: @Composable () -> Unit
 ) {
     val isDark = isAppDark()
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val readableTint = ensureContrast(tint, surfaceColor, isDark)
+
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
@@ -160,7 +183,7 @@ fun NeuIconButton(
             ),
         contentAlignment = Alignment.Center
     ) {
-        CompositionLocalProvider(LocalContentColor provides tint) {
+        CompositionLocalProvider(LocalContentColor provides readableTint) {
             content()
         }
     }
