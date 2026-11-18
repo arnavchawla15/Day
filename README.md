@@ -17,13 +17,23 @@ Instead of juggling multiple tools, Day gives you an interactive home screen wid
 ### 📅 Daily Time-Blocking (Today Tab)
 - Hourly timeline with color-coded task blocks
 - Day navigation (`<` / `>`) to review past days or plan ahead
+- Tap-to-edit task cards with Neumorphic time pickers and deletion
+- Share schedule: one-tap export to clipboard and Android system share sheet (WhatsApp, Telegram, Messages, etc.)
+- Scheduled to-dos appear with their allotted start time (e.g., *"At 2:00 PM"*) rather than a dummy end-time
 - Daily score and completion streak tracking
 - Daily quote (rotating or custom)
 
 ### ✅ Tasks & Recurring To-Dos (Todo Tab)
-- Priority markers (P1, P2, P3) and due dates
-- Recurring rules: daily, weekly, or custom days (advances automatically upon completion)
-- To-dos with assigned times automatically link into Today's schedule
+- **Custom To-Do Lists**: Create and toggle between custom lists (Work, Personal, Errands, etc.) with dedicated task counts
+- **Subtasks & Checklist Steps**: Add, manage, and tick off incremental steps within any to-do
+- **Reliable Recurring Rules**: Daily, weekly, or custom day recurrences automatically persist and roll forward to Today's agenda every single day, even if missed on a previous day
+- Priority markers (P1, P2, P3, P4) and due dates with clock dial time pickers
+- Bidirectional synchronization: ticking off a to-do in the Todo tab immediately marks any corresponding scheduled task complete in Today and on the widget
+
+### 🔔 Notifications & Reminders
+- System notifications for scheduled task start times and to-do deadlines
+- `AlarmManager` integration with `BOOT_COMPLETED` receiver to persist reminders across device reboots
+- Toggleable in Settings with full Android 13+ runtime permission support
 
 ### 🌱 Habit Tracking & Analytics (Habits Tab)
 - Habits at rest stay time-free until scheduled into Today
@@ -32,9 +42,10 @@ Instead of juggling multiple tools, Day gives you an interactive home screen wid
   - **30-Day Heatmap**: Canvas contribution grid showing completions and target hours reached
   - **Stats**: Current streak, all-time best streak, monthly consistency rate, and average session duration
 
-### 📝 Notes
-- Clean scratchpad for thoughts, meeting notes, or ideas
-- Color-tagged cards with tap-to-edit
+### 📝 Notes & Folders (Notes Tab)
+- Scratchpad for thoughts, meeting memos, and ideas
+- **Folder Organization**: Group notes into custom folders (Ideas, Work, Journal, etc.) with horizontal pill navigation
+- Quick inline editing and timestamp tracking
 
 ### 🤖 Day — The Assistant
 - An integrated assistant that can read and modify your schedule
@@ -45,13 +56,14 @@ Instead of juggling multiple tools, Day gives you an interactive home screen wid
 - **Cached & token-optimized**: In-memory query caching and trimmed snapshots to keep latency and API usage minimal
 
 ### 📱 Home Screen Widget
-- Interactive Jetpack Glance widget
-- Toggle between Today, Todos, and Notes without opening the app
-- Mark tasks or todos complete directly from the home screen
+- Interactive Jetpack Glance widget with instant, zero-lag button toggling
+- Toggle between Today, Todos, and Notes directly from your home screen
+- Bidirectional task and to-do ticking with debounced action callbacks
+- Clean deduplicated Today view showing tasks and unscheduled due items with WCAG AAA contrast
 
 ### 🎨 Theming
-- Neumorphic soft-shadow interface
-- Independent color selection for the app and the widget (including deep dark mode `#363636` and custom hex accents)
+- Neumorphic soft-shadow interface with extruded and inset physical depths
+- Independent color selection for the app and widget, featuring adapted dark mode `#363636` contrast optimization
 
 ---
 
@@ -60,7 +72,7 @@ Instead of juggling multiple tools, Day gives you an interactive home screen wid
 - **Language**: Kotlin
 - **UI**: Jetpack Compose & Material 3
 - **Widgets**: Jetpack Glance (AppWidget)
-- **Database**: Room Database (v5 with migrations)
+- **Database**: Room Database (v6 with safe SQLite migrations)
 - **Concurrency**: Coroutines & StateFlow
 - **Voice**: Android SpeechRecognizer
 - **AI**: Google Generative AI (Gemini Flash API)

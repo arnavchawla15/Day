@@ -91,6 +91,7 @@ class Phase3Tests {
             override suspend fun updateTodo(todo: Todo) {}
             override suspend fun deleteTodo(todo: Todo) {}
             override suspend fun deleteTodoById(id: Int) {}
+            override fun getCustomLists() = flowOf(emptyList<String>())
         }
 
         val fakeHabitDao = object : HabitDao {
@@ -177,5 +178,76 @@ class Phase3Tests {
         val inactiveTextColor = androidx.compose.ui.graphics.Color(0xFFF0F0F0)
         val inactiveContrast = com.example.day.theme.calculateContrast(inactiveTextColor, inactiveTabBg)
         assertTrue("Inactive widget tab text contrast must be >= 7.0:1 (AAA), was $inactiveContrast", inactiveContrast >= 7.0f)
+    }
+
+    @Test
+    fun testSubtaskSerializationAndParsing() {
+        val steps = listOf(
+            TodoSubtask(id = "1", title = "Step A", isCompleted = false),
+            TodoSubtask(id = "2", title = "Step B", isCompleted = true)
+        )
+        val json = SubtaskHelper.serializeSubtasks(steps)
+        assertTrue("JSON should contain Step A", json.contains("Step A"))
+        assertTrue("JSON should contain Step B", json.contains("Step B"))
+
+        val parsed = SubtaskHelper.parseSubtasks(json)
+        assertEquals(2, parsed.size)
+        assertEquals("Step A", parsed[0].title)
+        assertFalse(parsed[0].isCompleted)
+        assertEquals("Step B", parsed[1].title)
+        assertTrue(parsed[1].isCompleted)
+    }
+
+    @Test
+    fun testRecurringTodoAppearsOnTodayEvenWhenOverdue() {
+        // Daily recurring todo due 3 days ago but not completed
+        val recurringTodo = Todo(
+            id = 10,
+            title = "Take vitamins",
+            dueDate = "2026-11-15",
+            recurrenceType = "DAILY",
+            isCompleted = false
+        )
+        val todayStr = "2026-11-18"
+
+        // Today filter logic from DayViewModel
+        val matchesToday = if (recurringTodo.dueDate == todayStr) {
+            true
+        } else if (RecurrenceHelper.isRecurring(recurringTodo) && !recurringTodo.isCompleted) {
+            recurringTodo.dueDate == null || recurringTodo.dueDate <= todayStr
+        } else {
+            false
+        }
+
+        assertTrue("Recurring uncompleted todo should appear on today even if not ticked off previously", matchesToday)
+    }
+
+    @Test
+    fun testScheduledTodoDeduplication() {
+        val scheduledTask = Task(
+            id = 1,
+            name = "Morning Workout",
+            startTime = "07:00",
+            endTime = "08:00",
+            colorHex = "#436B52",
+            date = "2026-11-18",
+            category = "Todo",
+            todoId = 99
+        )
+        val tasks = listOf(scheduledTask)
+        val todayTodos = listOf(
+            Todo(id = 99, title = "Morning Workout", dueDate = "2026-11-18"),
+            Todo(id = 100, title = "Buy groceries", dueDate = "2026-11-18")
+        )
+
+        val scheduledTodoIds = tasks.mapNotNull { it.todoId }.toSet()
+        val scheduledTaskNames = tasks.map { it.name.trim().lowercase(Locale.ROOT) }.toSet()
+        val unscheduled = todayTodos.filter {
+            !scheduledTodoIds.contains(it.id) &&
+            !scheduledTaskNames.contains(it.title.trim().lowercase(Locale.ROOT))
+        }
+
+        assertEquals("Only unscheduled todos should remain", 1, unscheduled.size)
+        assertEquals("Buy groceries", unscheduled[0].title)
     }
 }

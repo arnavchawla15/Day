@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HabitLog::class,
         Note::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -67,6 +67,41 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Migration for todos: listName and subtasksJson
+                val todoCursor = database.query("PRAGMA table_info(todos)")
+                val todoColumns = mutableSetOf<String>()
+                while (todoCursor.moveToNext()) {
+                    val colIndex = todoCursor.getColumnIndex("name")
+                    if (colIndex >= 0) {
+                        todoColumns.add(todoCursor.getString(colIndex))
+                    }
+                }
+                todoCursor.close()
+                if (!todoColumns.contains("listName")) {
+                    database.execSQL("ALTER TABLE todos ADD COLUMN listName TEXT NOT NULL DEFAULT 'General'")
+                }
+                if (!todoColumns.contains("subtasksJson")) {
+                    database.execSQL("ALTER TABLE todos ADD COLUMN subtasksJson TEXT NOT NULL DEFAULT ''")
+                }
+
+                // Migration for notes: folder
+                val noteCursor = database.query("PRAGMA table_info(notes)")
+                val noteColumns = mutableSetOf<String>()
+                while (noteCursor.moveToNext()) {
+                    val colIndex = noteCursor.getColumnIndex("name")
+                    if (colIndex >= 0) {
+                        noteColumns.add(noteCursor.getString(colIndex))
+                    }
+                }
+                noteCursor.close()
+                if (!noteColumns.contains("folder")) {
+                    database.execSQL("ALTER TABLE notes ADD COLUMN folder TEXT NOT NULL DEFAULT 'General'")
+                }
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -74,7 +109,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "day_database"
                 )
-                .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

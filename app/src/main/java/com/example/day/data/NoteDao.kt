@@ -19,6 +19,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id")
     suspend fun getNoteById(id: Int): Note?
 
+    @Query("SELECT DISTINCT folder FROM notes WHERE folder IS NOT NULL AND folder != ''")
+    fun getFolders(): Flow<List<String>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNote(note: Note): Long
 

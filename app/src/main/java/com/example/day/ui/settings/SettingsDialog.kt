@@ -86,6 +86,9 @@ fun SettingsDialog(
     var isApiKeyVisible by remember { mutableStateOf(false) }
     var isTestingApiKey by remember { mutableStateOf(false) }
 
+    // Reminders & Notifications state
+    var remindersEnabled by remember { mutableStateOf(com.example.day.reminder.ReminderManager.isRemindersEnabled(context)) }
+
     // AI Schedule state (Feature 2B)
     val schedulePrefs by viewModel.schedulePreferences.collectAsState()
     var autoScheduleEnabledState by remember(schedulePrefs) { mutableStateOf(schedulePrefs.autoScheduleEnabled) }
@@ -459,7 +462,52 @@ fun SettingsDialog(
                         }
                     }
 
-                    // 4. Gemini API Key NeuCard with Guidance & Testing
+                    // 4. Notifications & Reminders NeuCard
+                    NeuCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        cornerRadius = 16.dp,
+                        contentPadding = PaddingValues(16.dp)
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Notifications & Reminders",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Alerts for scheduled tasks and due to-dos",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = remindersEnabled,
+                                    onCheckedChange = {
+                                        remindersEnabled = it
+                                        com.example.day.reminder.ReminderManager.setRemindersEnabled(context, it)
+                                        Toast.makeText(
+                                            context,
+                                            if (it) "Reminders enabled" else "Reminders disabled",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = primaryColor
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // 5. Gemini API Key NeuCard with Guidance & Testing
                     NeuCard(
                         modifier = Modifier.fillMaxWidth(),
                         cornerRadius = 16.dp,

@@ -198,10 +198,10 @@ fun NeuCheckbox(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    size: Dp = 24.dp
+    size: Dp = 24.dp,
+    cornerRadius: Dp = 7.dp
 ) {
     val isDark = isAppDark()
-    val cornerRadius = 7.dp
     val shape = RoundedCornerShape(cornerRadius)
     val primaryColor = MaterialTheme.colorScheme.primary
 

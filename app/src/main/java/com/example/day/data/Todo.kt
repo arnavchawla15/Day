@@ -17,5 +17,7 @@ data class Todo(
     val isCompleted: Boolean = false,
     val recurrenceType: String? = null, // "DAILY", "EVERY_OTHER_DAY", "WEEKLY", "CUSTOM", or null
     val recurrenceDays: String? = null, // e.g. "SUNDAY" or "MON,WED,FRI"
+    val listName: String = "General",   // Custom todo list name (e.g. "Work", "Personal", "Groceries")
+    val subtasksJson: String = "",      // JSON string of TodoSubtask items
     val createdAt: Long = System.currentTimeMillis()
 )

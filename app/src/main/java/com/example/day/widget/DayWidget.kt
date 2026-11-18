@@ -72,7 +72,14 @@ class DayWidget : GlanceAppWidget() {
 
         // Load tasks and todos for today
         val tasks = withContext(Dispatchers.IO) { taskDao.getTasksForDateSync(todayStr) }
-        val todayTodos = withContext(Dispatchers.IO) { todoDao.getTodosForDateSync(todayStr) }
+        val rawTodayTodos = withContext(Dispatchers.IO) { todoDao.getTodosForDateSync(todayStr) }
+        // Deduplicate todos that are already scheduled as tasks for today (Fulfills Note 7)
+        val scheduledTodoIds = tasks.mapNotNull { it.todoId }.toSet()
+        val scheduledTaskNames = tasks.map { it.name.trim().lowercase(Locale.ROOT) }.toSet()
+        val todayTodos = rawTodayTodos.filter {
+            !scheduledTodoIds.contains(it.id) &&
+            !scheduledTaskNames.contains(it.title.trim().lowercase(Locale.ROOT))
+        }
         val widgetTodos = withContext(Dispatchers.IO) { todoDao.getTodosForWidgetSync(todayStr) }
         val notes = withContext(Dispatchers.IO) {
             try { noteDao.getNotesSync() } catch (_: Exception) { emptyList() }
@@ -251,7 +258,12 @@ class DayWidget : GlanceAppWidget() {
                                 LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
                                     // 1. Scheduled Tasks for Today
                                     items(tasks.take(20)) { task ->
-                                        val timeDisplay = "${formatTo12Hour(task.startTime)} – ${formatTo12Hour(task.endTime)}"
+                                        val isScheduledTodo = task.todoId != null || task.category.equals("Todo", ignoreCase = true)
+                                        val timeDisplay = if (isScheduledTodo) {
+                                            "At ${formatTo12Hour(task.startTime)}"
+                                        } else {
+                                            "${formatTo12Hour(task.startTime)} – ${formatTo12Hour(task.endTime)}"
+                                        }
                                         val isDone = task.isCompleted
 
                                         val checkBgModifier = if (isDone) {
@@ -616,21 +628,8 @@ class SwitchSectionAction : ActionCallback {
             .putString("active_section", targetSection)
             .commit()
 
-        // 3. Immediately trigger Glance update
+        // 3. Immediately trigger Glance update (single direct update prevents lag/flicker)
         DayWidget().update(context, glanceId)
-
-        // 4. Send broadcast to system launcher to ensure immediate redraw
-        try {
-            val intent = Intent(context, DayWidgetReceiver::class.java).apply {
-                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val ids = appWidgetManager.getAppWidgetIds(
-                    ComponentName(context, DayWidgetReceiver::class.java)
-                )
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-            }
-            context.sendBroadcast(intent)
-        } catch (_: Exception) {}
     }
 
     companion object {
@@ -648,8 +647,8 @@ class ToggleTaskAction : ActionCallback {
         val taskId = parameters[TaskIdKey] ?: return
         val now = System.currentTimeMillis()
         val lastTime = lastToggleTimes[taskId] ?: 0L
-        if (now - lastTime < 500L) {
-            return // Debounce rapid double-click
+        if (now - lastTime < 250L) {
+            return // Fast debounce
         }
         lastToggleTimes[taskId] = now
 
@@ -672,37 +671,29 @@ class ToggleTaskAction : ActionCallback {
             }
 
             // Bidirectional Todo updating
-            if (task.todoId != null) {
-                val todoDao = db.todoDao()
-                val todo = todoDao.getTodoById(task.todoId)
-                if (todo != null) {
-                    if (nextCompleted) {
-                        if (RecurrenceHelper.isRecurring(todo)) {
-                            val nextDate = RecurrenceHelper.getNextDueDate(todo)
-                            todoDao.updateTodo(todo.copy(dueDate = nextDate, isCompleted = false))
-                        } else {
-                            todoDao.updateTodo(todo.copy(isCompleted = true))
-                        }
+            val todoDao = db.todoDao()
+            val matchedTodo = if (task.todoId != null) {
+                todoDao.getTodoById(task.todoId)
+            } else {
+                todoDao.getActiveTodosSync().find { it.title.trim().equals(task.name.trim(), ignoreCase = true) }
+            }
+
+            if (matchedTodo != null) {
+                if (nextCompleted) {
+                    if (RecurrenceHelper.isRecurring(matchedTodo)) {
+                        val nextDate = RecurrenceHelper.getNextDueDate(matchedTodo)
+                        todoDao.updateTodo(matchedTodo.copy(dueDate = nextDate, isCompleted = false))
                     } else {
-                        todoDao.updateTodo(todo.copy(isCompleted = false))
+                        todoDao.updateTodo(matchedTodo.copy(isCompleted = true))
                     }
+                } else {
+                    todoDao.updateTodo(matchedTodo.copy(isCompleted = false))
                 }
             }
         }
 
+        // Direct Glance update
         DayWidget().update(context, glanceId)
-
-        try {
-            val intent = Intent(context, DayWidgetReceiver::class.java).apply {
-                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val ids = appWidgetManager.getAppWidgetIds(
-                    ComponentName(context, DayWidgetReceiver::class.java)
-                )
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-            }
-            context.sendBroadcast(intent)
-        } catch (_: Exception) {}
     }
 }
 
@@ -716,8 +707,8 @@ class ToggleTodoAction : ActionCallback {
         val todoId = parameters[TodoIdKey] ?: return
         val now = System.currentTimeMillis()
         val lastTime = lastToggleTimes[todoId] ?: 0L
-        if (now - lastTime < 500L) {
-            return // Debounce rapid double-click
+        if (now - lastTime < 250L) {
+            return // Fast debounce
         }
         lastToggleTimes[todoId] = now
 
@@ -725,6 +716,7 @@ class ToggleTodoAction : ActionCallback {
             val db = AppDatabase.getDatabase(context)
             val todoDao = db.todoDao()
             val todo = todoDao.getTodoById(todoId) ?: return@withContext
+            val nextCompleted = !todo.isCompleted
 
             if (todo.isCompleted) {
                 todoDao.updateTodo(todo.copy(isCompleted = false))
@@ -736,20 +728,19 @@ class ToggleTodoAction : ActionCallback {
                     todoDao.updateTodo(todo.copy(isCompleted = true))
                 }
             }
+
+            // Bidirectional sync: also update any matching task scheduled for today
+            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Calendar.getInstance().time)
+            val taskDao = db.taskDao()
+            val matchingTasks = taskDao.getTasksForDateSync(todayStr).filter {
+                it.todoId == todoId || it.name.trim().equals(todo.title.trim(), ignoreCase = true)
+            }
+            for (mTask in matchingTasks) {
+                taskDao.updateTask(mTask.copy(isCompleted = nextCompleted))
+            }
         }
 
+        // Direct Glance update
         DayWidget().update(context, glanceId)
-
-        try {
-            val intent = Intent(context, DayWidgetReceiver::class.java).apply {
-                action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                val appWidgetManager = AppWidgetManager.getInstance(context)
-                val ids = appWidgetManager.getAppWidgetIds(
-                    ComponentName(context, DayWidgetReceiver::class.java)
-                )
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-            }
-            context.sendBroadcast(intent)
-        } catch (_: Exception) {}
     }
 }

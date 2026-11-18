@@ -8,6 +8,7 @@ import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.day.data.*
+import com.example.day.reminder.ReminderManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
@@ -48,9 +49,17 @@ class DayViewModel(
     val allTodos: StateFlow<List<Todo>> = todoDao.getAllTodos()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Todos matching the selected date (Bug 2: Todo -> Today reflection, shows active and completed)
+    // Todos matching the selected date (shows active and completed; recurring uncompleted todos due on or before selected date automatically appear)
     val todayTodos: StateFlow<List<Todo>> = combine(selectedDate, allTodos) { date, todos ->
-        todos.filter { it.dueDate == date }
+        todos.filter { todo ->
+            if (todo.dueDate == date) {
+                true
+            } else if (RecurrenceHelper.isRecurring(todo) && !todo.isCompleted) {
+                todo.dueDate == null || todo.dueDate <= date
+            } else {
+                false
+            }
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Habits (at rest, no time attached)
@@ -594,7 +603,8 @@ class DayViewModel(
                 todoId = todoId,
                 habitId = habitId
             )
-            taskDao.insertTask(task)
+            val insertedId = taskDao.insertTask(task)
+            ReminderManager.scheduleTaskReminder(appContext, task.copy(id = insertedId.toInt()))
             updateWidget()
         }
     }
@@ -604,6 +614,7 @@ class DayViewModel(
             val actualMin = parseTimeToMinutes(task.endTime) - parseTimeToMinutes(task.startTime)
             val updatedTask = task.copy(actualDurationMinutes = actualMin)
             taskDao.updateTask(updatedTask)
+            ReminderManager.scheduleTaskReminder(appContext, updatedTask)
             updateWidget()
         }
     }
@@ -630,16 +641,27 @@ class DayViewModel(
                 }
             }
 
-            // If linked to a todo, toggle todo completion accordingly
-            if (task.todoId != null) {
-                val todo = todoDao.getTodoById(task.todoId)
-                if (todo != null) {
-                    if (nextState) {
-                        handleTodoCompletion(todo)
-                    } else {
-                        todoDao.updateTodo(todo.copy(isCompleted = false))
-                    }
+            // If linked to a todo (or matching todo by title on today's schedule), toggle todo completion accordingly
+            val matchedTodo = if (task.todoId != null) {
+                todoDao.getTodoById(task.todoId)
+            } else {
+                todoDao.getActiveTodosSync().find { it.title.trim().equals(task.name.trim(), ignoreCase = true) }
+            }
+
+            if (matchedTodo != null) {
+                if (nextState) {
+                    handleTodoCompletion(matchedTodo)
+                    ReminderManager.cancelTodoReminder(appContext, matchedTodo.id)
+                } else {
+                    todoDao.updateTodo(matchedTodo.copy(isCompleted = false))
+                    ReminderManager.scheduleTodoReminder(appContext, matchedTodo)
                 }
+            }
+
+            if (nextState) {
+                ReminderManager.cancelTaskReminder(appContext, task.id)
+            } else {
+                ReminderManager.scheduleTaskReminder(appContext, updatedTask)
             }
 
             updateWidget()
@@ -649,6 +671,7 @@ class DayViewModel(
     fun deleteTask(task: Task) {
         viewModelScope.launch {
             taskDao.deleteTask(task)
+            ReminderManager.cancelTaskReminder(appContext, task.id)
             updateWidget()
         }
     }
@@ -661,7 +684,9 @@ class DayViewModel(
         dueTime: String? = null,
         priority: Int = 2,
         recurrenceType: String? = null,
-        recurrenceDays: String? = null
+        recurrenceDays: String? = null,
+        listName: String = "General",
+        subtasksJson: String = ""
     ) {
         if (title.isBlank()) return
         viewModelScope.launch {
@@ -672,9 +697,12 @@ class DayViewModel(
                 priority = priority,
                 isCompleted = false,
                 recurrenceType = recurrenceType,
-                recurrenceDays = recurrenceDays
+                recurrenceDays = recurrenceDays,
+                listName = listName,
+                subtasksJson = subtasksJson
             )
-            todoDao.insertTodo(todo)
+            val insertedId = todoDao.insertTodo(todo)
+            ReminderManager.scheduleTodoReminder(appContext, todo.copy(id = insertedId.toInt()))
             updateWidget()
         }
     }
@@ -682,6 +710,7 @@ class DayViewModel(
     fun updateTodo(todo: Todo) {
         viewModelScope.launch {
             todoDao.updateTodo(todo)
+            ReminderManager.scheduleTodoReminder(appContext, todo)
             updateWidget()
         }
     }
@@ -689,18 +718,37 @@ class DayViewModel(
     fun completeTodo(todo: Todo) {
         viewModelScope.launch {
             handleTodoCompletion(todo)
+            ReminderManager.cancelTodoReminder(appContext, todo.id)
             updateWidget()
         }
     }
 
     fun toggleTodoCompletion(todo: Todo) {
         viewModelScope.launch {
+            val nextCompleted = !todo.isCompleted
             if (todo.isCompleted) {
                 // Uncomplete
                 todoDao.updateTodo(todo.copy(isCompleted = false))
+                ReminderManager.scheduleTodoReminder(appContext, todo)
             } else {
                 handleTodoCompletion(todo)
+                ReminderManager.cancelTodoReminder(appContext, todo.id)
             }
+
+            // Bidirectional sync: also update any matching task scheduled for today
+            val todayStr = getTodayDateString()
+            val matchingTasks = taskDao.getTasksForDateSync(todayStr).filter {
+                it.todoId == todo.id || it.name.trim().equals(todo.title.trim(), ignoreCase = true)
+            }
+            for (mTask in matchingTasks) {
+                taskDao.updateTask(mTask.copy(isCompleted = nextCompleted))
+                if (nextCompleted) {
+                    ReminderManager.cancelTaskReminder(appContext, mTask.id)
+                } else {
+                    ReminderManager.scheduleTaskReminder(appContext, mTask)
+                }
+            }
+
             updateWidget()
         }
     }
@@ -723,6 +771,7 @@ class DayViewModel(
     fun deleteTodo(todo: Todo) {
         viewModelScope.launch {
             todoDao.deleteTodo(todo)
+            ReminderManager.cancelTodoReminder(appContext, todo.id)
             updateWidget()
         }
     }
@@ -804,13 +853,14 @@ class DayViewModel(
 
     // ── Note Operations ─────────────────────────────────────────────────────
 
-    fun addNote(title: String, content: String, colorHex: String = "#FFF9C4") {
+    fun addNote(title: String, content: String, colorHex: String = "#FFF9C4", folder: String = "General") {
         if (title.isBlank() && content.isBlank()) return
         viewModelScope.launch {
             val note = Note(
                 title = title.trim(),
                 content = content.trim(),
                 colorHex = colorHex,
+                folder = if (folder.isBlank()) "General" else folder.trim(),
                 updatedAt = System.currentTimeMillis()
             )
             noteDao.insertNote(note)

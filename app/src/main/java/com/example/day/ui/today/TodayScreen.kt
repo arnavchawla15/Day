@@ -1,6 +1,11 @@
 package com.example.day.ui.today
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,7 +18,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.*
@@ -36,6 +43,7 @@ import com.example.day.R
 import com.example.day.data.Task
 import com.example.day.data.Todo
 import com.example.day.ui.DayViewModel
+import com.example.day.ui.common.NeuButton
 import com.example.day.ui.common.NeuCard
 import com.example.day.ui.common.NeuCheckbox
 import com.example.day.ui.common.NeuIconButton
@@ -44,6 +52,7 @@ import com.example.day.ui.common.NeuTimePickerDialog
 import com.example.day.ui.common.SmartInputBar
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -72,9 +81,20 @@ fun TodayScreen(
     }
 
     var showAddTaskDialog by remember { mutableStateOf(false) }
+    var taskToEdit by remember { mutableStateOf<Task?>(null) }
 
-    val completedTasksCount = tasks.count { it.isCompleted } + todayTodos.count { it.isCompleted }
-    val totalCount = tasks.size + todayTodos.size
+    // Deduplicate todos that are already scheduled as tasks for today (Fulfills Note 7)
+    val scheduledTodoIds = remember(tasks) { tasks.mapNotNull { it.todoId }.toSet() }
+    val scheduledTaskNames = remember(tasks) { tasks.map { it.name.trim().lowercase(Locale.ROOT) }.toSet() }
+    val unscheduledTodayTodos = remember(todayTodos, scheduledTodoIds, scheduledTaskNames) {
+        todayTodos.filter { todo ->
+            !scheduledTodoIds.contains(todo.id) &&
+            !scheduledTaskNames.contains(todo.title.trim().lowercase(Locale.ROOT))
+        }
+    }
+
+    val completedTasksCount = tasks.count { it.isCompleted } + unscheduledTodayTodos.count { it.isCompleted }
+    val totalCount = tasks.size + unscheduledTodayTodos.size
     val dailyScore = if (totalCount > 0) (completedTasksCount * 100) / totalCount else 0
 
     Column(
@@ -82,7 +102,7 @@ fun TodayScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // 1. Header row: Title "Today" (left) + Action buttons: Add Task & Themes/Quotes (right)
+        // 1. Header row: Title "Today" (left) + Action buttons: Share, Add Task, Themes/Settings (right)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -100,6 +120,22 @@ fun TodayScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Share Schedule Button (Fulfills Note 4)
+                NeuIconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        shareSchedule(context, selectedDate, tasks, unscheduledTodayTodos)
+                    },
+                    size = 40.dp,
+                    tint = primaryColor
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share Schedule",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
                 NeuIconButton(
                     onClick = { showAddTaskDialog = true },
                     size = 40.dp,
@@ -289,7 +325,7 @@ fun TodayScreen(
             }
 
             // 4. Empty State
-            if (tasks.isEmpty() && todayTodos.isEmpty()) {
+            if (tasks.isEmpty() && unscheduledTodayTodos.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier
@@ -314,7 +350,7 @@ fun TodayScreen(
                     }
                 }
             } else {
-                // Scheduled Tasks
+                // Scheduled Tasks (Fulfills Note 3: editable like tasks in todo section)
                 items(tasks, key = { "task_${it.id}" }) { task ->
                     TodayTaskCard(
                         task = task,
@@ -323,6 +359,9 @@ fun TodayScreen(
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.toggleTaskCompletion(task)
                         },
+                        onEdit = {
+                            taskToEdit = task
+                        },
                         onDelete = {
                             viewModel.deleteTask(task)
                         }
@@ -330,8 +369,8 @@ fun TodayScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                // Due Todos (Bug 2: Todo -> Today reflection)
-                if (todayTodos.isNotEmpty()) {
+                // Due Todos (Deduplicated: excludes any todo already scheduled as a task for today)
+                if (unscheduledTodayTodos.isNotEmpty()) {
                     item {
                         Text(
                             text = "DUE TODAY",
@@ -340,7 +379,7 @@ fun TodayScreen(
                             modifier = Modifier.padding(top = 10.dp, bottom = 8.dp, start = 4.dp)
                         )
                     }
-                    items(todayTodos, key = { "todo_${it.id}" }) { todo ->
+                    items(unscheduledTodayTodos, key = { "todo_${it.id}" }) { todo ->
                         TodayTodoCard(
                             todo = todo,
                             onToggle = {
@@ -381,6 +420,24 @@ fun TodayScreen(
             }
         )
     }
+
+    // Edit Task Dialog (Fulfills Note 3: make today's tasks editable)
+    if (taskToEdit != null) {
+        EditTaskDialog(
+            task = taskToEdit!!,
+            onDismiss = { taskToEdit = null },
+            onConfirm = { updatedName, updatedStart, updatedEnd ->
+                viewModel.updateTask(
+                    taskToEdit!!.copy(
+                        name = updatedName,
+                        startTime = updatedStart,
+                        endTime = updatedEnd
+                    )
+                )
+                taskToEdit = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -388,66 +445,127 @@ private fun TodayTaskCard(
     task: Task,
     accentColor: Color,
     onToggle: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val isDone = task.isCompleted
     val isHabit = task.habitId != null
+    var showActions by remember { mutableStateOf(false) }
 
     NeuCard(
         modifier = Modifier
             .fillMaxWidth()
             .alpha(if (isDone) 0.5f else 1.0f),
         cornerRadius = 16.dp,
-        contentPadding = PaddingValues(14.dp)
+        contentPadding = PaddingValues(14.dp),
+        onClick = { showActions = !showActions }
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Left Accent Bar (3.dp wide, dynamic accent color, rounded — ONLY if task is habit-linked)
-            if (isHabit) {
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .height(36.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(accentColor)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-            }
-
-            NeuCheckbox(
-                checked = isDone,
-                onCheckedChange = { onToggle() }
-            )
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = task.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "${formatTo12Hour(task.startTime)} – ${formatTo12Hour(task.endTime)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            NeuIconButton(
-                onClick = onDelete,
-                size = 34.dp,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    modifier = Modifier.size(16.dp)
+                // Left Accent Bar (3.dp wide, dynamic accent color, rounded — ONLY if task is habit-linked)
+                if (isHabit) {
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(accentColor)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                }
+
+                NeuCheckbox(
+                    checked = isDone,
+                    onCheckedChange = { onToggle() }
                 )
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = task.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // Scheduled todos appear with allotted time, not an end time (Fulfills Note 6)
+                    val isScheduledTodo = task.todoId != null || task.category.equals("Todo", ignoreCase = true)
+                    val timeDisplay = if (isScheduledTodo) {
+                        "At ${formatTo12Hour(task.startTime)}"
+                    } else {
+                        "${formatTo12Hour(task.startTime)} – ${formatTo12Hour(task.endTime)}"
+                    }
+
+                    Text(
+                        text = timeDisplay,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                NeuIconButton(
+                    onClick = onEdit,
+                    size = 34.dp,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                NeuIconButton(
+                    onClick = onDelete,
+                    size = 34.dp,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Expanded action buttons on tap (Fulfills Note 3: matching todo section)
+            AnimatedVisibility(visible = showActions) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    NeuButton(
+                        onClick = onEdit,
+                        cornerRadius = 8.dp,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Edit", fontSize = 12.sp)
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    NeuButton(
+                        onClick = onDelete,
+                        cornerRadius = 8.dp,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(14.dp), tint = com.example.day.theme.OverdueRed)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Delete", fontSize = 12.sp, color = com.example.day.theme.OverdueRed)
+                    }
+                }
             }
         }
     }
@@ -610,6 +728,167 @@ private fun CreateTaskDialog(
             onDismiss = { showEndTimePicker = false }
         )
     }
+}
+
+@Composable
+private fun EditTaskDialog(
+    task: Task,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, start: String, end: String) -> Unit
+) {
+    var name by remember { mutableStateOf(task.name) }
+    var startTime by remember { mutableStateOf(task.startTime) }
+    var endTime by remember { mutableStateOf(task.endTime) }
+
+    var showStartTimePicker by remember { mutableStateOf(false) }
+    var showEndTimePicker by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Edit Scheduled Task",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                NeuTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    placeholder = "Task title..."
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text("Time Block:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Start Time Button
+                    NeuCard(
+                        modifier = Modifier.weight(1f),
+                        cornerRadius = 12.dp,
+                        contentPadding = PaddingValues(10.dp),
+                        onClick = { showStartTimePicker = true }
+                    ) {
+                        Column {
+                            Text("Start", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(formatTo12Hour(startTime), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+
+                    // End Time Button
+                    NeuCard(
+                        modifier = Modifier.weight(1f),
+                        cornerRadius = 12.dp,
+                        contentPadding = PaddingValues(10.dp),
+                        onClick = { showEndTimePicker = true }
+                    ) {
+                        Column {
+                            Text("End", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(formatTo12Hour(endTime), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isNotBlank()) {
+                        onConfirm(name.trim(), startTime, endTime)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Text("Save", color = MaterialTheme.colorScheme.onPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+
+    if (showStartTimePicker) {
+        NeuTimePickerDialog(
+            initialTime = startTime,
+            title = "Select Start Time",
+            onTimeSelected = { startTime = it },
+            onDismiss = { showStartTimePicker = false }
+        )
+    }
+
+    if (showEndTimePicker) {
+        NeuTimePickerDialog(
+            initialTime = endTime,
+            title = "Select End Time",
+            onTimeSelected = { endTime = it },
+            onDismiss = { showEndTimePicker = false }
+        )
+    }
+}
+
+private fun shareSchedule(context: Context, dateStr: String, tasks: List<Task>, todos: List<Todo>) {
+    val displayDate = try {
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val d = sdf.parse(dateStr)
+        SimpleDateFormat("EEEE, MMM d", Locale.getDefault()).format(d ?: Date())
+    } catch (_: Exception) {
+        dateStr
+    }
+
+    val sb = StringBuilder()
+    sb.append("📅 Schedule for $displayDate\n\n")
+
+    if (tasks.isEmpty() && todos.isEmpty()) {
+        sb.append("No tasks scheduled for today.\n")
+    } else {
+        if (tasks.isNotEmpty()) {
+            sb.append("⏰ Scheduled Tasks:\n")
+            tasks.sortedBy { it.startTime }.forEach { task ->
+                val status = if (task.isCompleted) "✓ " else "• "
+                val isScheduledTodo = task.todoId != null || task.category.equals("Todo", ignoreCase = true)
+                val timeStr = if (isScheduledTodo) {
+                    formatTo12Hour(task.startTime)
+                } else {
+                    "${formatTo12Hour(task.startTime)} - ${formatTo12Hour(task.endTime)}"
+                }
+                sb.append("$status$timeStr: ${task.name}\n")
+            }
+            sb.append("\n")
+        }
+
+        if (todos.isNotEmpty()) {
+            sb.append("📋 To-Dos Due Today:\n")
+            todos.forEach { todo ->
+                val status = if (todo.isCompleted) "✓ " else "• "
+                val timeStr = if (!todo.dueTime.isNullOrBlank()) " (${formatTo12Hour(todo.dueTime)})" else ""
+                sb.append("$status${todo.title}$timeStr\n")
+            }
+        }
+    }
+
+    val scheduleText = sb.toString().trim()
+
+    // 1. Copy to clipboard
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    val clip = ClipData.newPlainText("Day Schedule", scheduleText)
+    clipboard?.setPrimaryClip(clip)
+
+    Toast.makeText(context, "Schedule copied to clipboard! Choose where to share:", Toast.LENGTH_SHORT).show()
+
+    // 2. Open Android system share chooser
+    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, scheduleText)
+        putExtra(Intent.EXTRA_SUBJECT, "My Schedule for $displayDate")
+    }
+    val shareIntent = Intent.createChooser(sendIntent, "Share Schedule")
+    context.startActivity(shareIntent)
 }
 
 private fun formatTo12Hour(timeStr: String): String {

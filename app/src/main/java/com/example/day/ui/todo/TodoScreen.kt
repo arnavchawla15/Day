@@ -6,13 +6,17 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -33,7 +37,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.day.data.RecurrenceHelper
+import com.example.day.data.SubtaskHelper
 import com.example.day.data.Todo
+import com.example.day.data.TodoSubtask
 import com.example.day.theme.OverdueRed
 import com.example.day.theme.neuExtruded
 import com.example.day.theme.neuInset
@@ -61,18 +67,39 @@ fun TodoScreen(
     val completedTodos by viewModel.completedTodos.collectAsState()
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var showAddListDialog by remember { mutableStateOf(false) }
     var todoToEdit by remember { mutableStateOf<Todo?>(null) }
     var isCompletedExpanded by remember { mutableStateOf(false) }
+    var selectedList by remember { mutableStateOf("All") }
 
     val haptic = LocalHapticFeedback.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val todayStr = viewModel.getTodayDateString()
 
+    // Available Custom Lists
+    val allLists = remember(activeTodos, completedTodos) {
+        val lists = mutableListOf("All", "General")
+        (activeTodos + completedTodos).forEach {
+            if (it.listName.isNotBlank() && !lists.contains(it.listName)) {
+                lists.add(it.listName)
+            }
+        }
+        lists.distinct()
+    }
+
+    // Filter todos by selected list
+    val listFilteredActive = remember(activeTodos, selectedList) {
+        if (selectedList == "All") activeTodos else activeTodos.filter { it.listName.equals(selectedList, ignoreCase = true) }
+    }
+    val listFilteredCompleted = remember(completedTodos, selectedList) {
+        if (selectedList == "All") completedTodos else completedTodos.filter { it.listName.equals(selectedList, ignoreCase = true) }
+    }
+
     // Grouping active todos
-    val overdueTodos = activeTodos.filter { it.dueDate != null && it.dueDate < todayStr }
-    val todayTodos = activeTodos.filter { it.dueDate == todayStr }
-    val upcomingTodos = activeTodos.filter { it.dueDate != null && it.dueDate > todayStr }
-    val noDueDateTodos = activeTodos.filter { it.dueDate == null }
+    val overdueTodos = listFilteredActive.filter { it.dueDate != null && it.dueDate < todayStr }
+    val todayTodos = listFilteredActive.filter { it.dueDate == todayStr }
+    val upcomingTodos = listFilteredActive.filter { it.dueDate != null && it.dueDate > todayStr }
+    val noDueDateTodos = listFilteredActive.filter { it.dueDate == null }
 
     Column(
         modifier = modifier
@@ -83,7 +110,7 @@ fun TodoScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 12.dp),
+                .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -95,7 +122,7 @@ fun TodoScreen(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${activeTodos.size} remaining",
+                    text = "${listFilteredActive.size} remaining",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -131,12 +158,80 @@ fun TodoScreen(
             }
         }
 
+        // 1.5 Custom Lists Row (Horizontal Pills)
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items(allLists) { list ->
+                val isSelected = selectedList.equals(list, ignoreCase = true)
+                val count = if (list == "All") activeTodos.size else activeTodos.count { it.listName.equals(list, ignoreCase = true) }
+                val label = if (count > 0) "$list ($count)" else list
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            if (isSelected) primaryColor else MaterialTheme.colorScheme.surface
+                        )
+                        .clickable { selectedList = list }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // [+] Add List Pill
+            item {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .clickable { showAddListDialog = true }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New List",
+                            tint = primaryColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "New List",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryColor
+                        )
+                    }
+                }
+            }
+        }
+
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
         ) {
+            val onSubtaskToggle: (Todo, String) -> Unit = { itemTodo, subtaskId ->
+                val steps = SubtaskHelper.parseSubtasks(itemTodo.subtasksJson).map { step ->
+                    if (step.id == subtaskId) step.copy(isCompleted = !step.isCompleted) else step
+                }
+                viewModel.updateTodo(itemTodo.copy(subtasksJson = SubtaskHelper.serializeSubtasks(steps)))
+            }
+
             // 2. Section: Overdue
             if (overdueTodos.isNotEmpty()) {
                 item {
@@ -157,7 +252,8 @@ fun TodoScreen(
                             viewModel.toggleTodoCompletion(todo)
                         },
                         onEdit = { todoToEdit = todo },
-                        onDelete = { viewModel.deleteTodo(todo) }
+                        onDelete = { viewModel.deleteTodo(todo) },
+                        onSubtaskToggle = { onSubtaskToggle(todo, it) }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -182,7 +278,8 @@ fun TodoScreen(
                             viewModel.toggleTodoCompletion(todo)
                         },
                         onEdit = { todoToEdit = todo },
-                        onDelete = { viewModel.deleteTodo(todo) }
+                        onDelete = { viewModel.deleteTodo(todo) },
+                        onSubtaskToggle = { onSubtaskToggle(todo, it) }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -207,7 +304,8 @@ fun TodoScreen(
                             viewModel.toggleTodoCompletion(todo)
                         },
                         onEdit = { todoToEdit = todo },
-                        onDelete = { viewModel.deleteTodo(todo) }
+                        onDelete = { viewModel.deleteTodo(todo) },
+                        onSubtaskToggle = { onSubtaskToggle(todo, it) }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -232,14 +330,15 @@ fun TodoScreen(
                             viewModel.toggleTodoCompletion(todo)
                         },
                         onEdit = { todoToEdit = todo },
-                        onDelete = { viewModel.deleteTodo(todo) }
+                        onDelete = { viewModel.deleteTodo(todo) },
+                        onSubtaskToggle = { onSubtaskToggle(todo, it) }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
 
             // 6. Section: Completed (collapsible, does not disappear permanently!)
-            if (completedTodos.isNotEmpty()) {
+            if (listFilteredCompleted.isNotEmpty()) {
                 item {
                     Row(
                         modifier = Modifier
@@ -251,7 +350,7 @@ fun TodoScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "COMPLETED (${completedTodos.size})",
+                            text = "COMPLETED (${listFilteredCompleted.size})",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -265,7 +364,7 @@ fun TodoScreen(
                 }
 
                 if (isCompletedExpanded) {
-                    items(completedTodos, key = { "completed_${it.id}" }) { todo ->
+                    items(listFilteredCompleted, key = { "completed_${it.id}" }) { todo ->
                         TodoItemCard(
                             todo = todo,
                             todayStr = todayStr,
@@ -275,7 +374,8 @@ fun TodoScreen(
                                 viewModel.toggleTodoCompletion(todo)
                             },
                             onEdit = { todoToEdit = todo },
-                            onDelete = { viewModel.deleteTodo(todo) }
+                            onDelete = { viewModel.deleteTodo(todo) },
+                            onSubtaskToggle = { onSubtaskToggle(todo, it) }
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -295,24 +395,85 @@ fun TodoScreen(
         )
     }
 
+    // Add Custom List Dialog
+    if (showAddListDialog) {
+        var newListNameInput by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddListDialog = false },
+            title = { Text("New Todo List", style = MaterialTheme.typography.titleLarge) },
+            text = {
+                Column {
+                    Text(
+                        text = "Create a custom list to organize your tasks.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    NeuTextField(
+                        value = newListNameInput,
+                        onValueChange = { newListNameInput = it },
+                        placeholder = "List name (e.g. Work, Shopping, Fitness)",
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newListNameInput.isNotBlank()) {
+                            val trimmed = newListNameInput.trim()
+                            selectedList = trimmed
+                            showAddListDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Create", color = MaterialTheme.colorScheme.onPrimary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddListDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     // Add Todo Dialog
     if (showAddDialog) {
         TodoEditBottomSheet(
             todo = null,
+            initialList = selectedList,
+            availableLists = allLists,
             onDismiss = { showAddDialog = false },
-            onSave = { title, dueDate, dueTime, priority, recurrence, recurrenceDays ->
-                viewModel.addTodo(title, dueDate, dueTime, priority, recurrence, recurrenceDays)
+            onSave = { title, dueDate, dueTime, priority, recurrence, recurrenceDays, listName, subtasksJson ->
+                viewModel.addTodo(
+                    title = title,
+                    dueDate = dueDate,
+                    dueTime = dueTime,
+                    priority = priority,
+                    recurrenceType = recurrence,
+                    recurrenceDays = recurrenceDays,
+                    listName = listName,
+                    subtasksJson = subtasksJson
+                )
                 showAddDialog = false
             }
         )
     }
 
-    // Edit Todo Dialog (Bug 3)
+    // Edit Todo Dialog
     if (todoToEdit != null) {
         TodoEditBottomSheet(
             todo = todoToEdit,
+            initialList = todoToEdit!!.listName,
+            availableLists = allLists,
             onDismiss = { todoToEdit = null },
-            onSave = { title, dueDate, dueTime, priority, recurrence, recurrenceDays ->
+            onSave = { title, dueDate, dueTime, priority, recurrence, recurrenceDays, listName, subtasksJson ->
                 viewModel.updateTodo(
                     todoToEdit!!.copy(
                         title = title,
@@ -320,7 +481,9 @@ fun TodoScreen(
                         dueTime = dueTime,
                         priority = priority,
                         recurrenceType = recurrence,
-                        recurrenceDays = recurrenceDays
+                        recurrenceDays = recurrenceDays,
+                        listName = listName,
+                        subtasksJson = subtasksJson
                     )
                 )
                 todoToEdit = null
@@ -337,9 +500,13 @@ private fun TodoItemCard(
     isDimmed: Boolean = false,
     onToggle: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onSubtaskToggle: (subtaskId: String) -> Unit = {}
 ) {
     var showActions by remember { mutableStateOf(false) }
+    var showSubtasks by remember { mutableStateOf(false) }
+    val subtasks = remember(todo.subtasksJson) { SubtaskHelper.parseSubtasks(todo.subtasksJson) }
+    val completedSubtasksCount = subtasks.count { it.isCompleted }
 
     NeuCard(
         modifier = Modifier
@@ -387,12 +554,33 @@ private fun TodoItemCard(
                         else -> null
                     }
 
-                    if (dueLabel != null) {
-                        Text(
-                            text = dueLabel,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (isOverdue) OverdueRed else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (dueLabel != null) {
+                            Text(
+                                text = dueLabel,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isOverdue) OverdueRed else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (todo.listName.isNotBlank() && !todo.listName.equals("General", ignoreCase = true)) {
+                            Text(
+                                text = "• ${todo.listName}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        if (subtasks.isNotEmpty()) {
+                            Text(
+                                text = "• $completedSubtasksCount/${subtasks.size} steps",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable { showSubtasks = !showSubtasks }
+                            )
+                        }
                     }
                 }
 
@@ -409,6 +597,40 @@ private fun TodoItemCard(
                         .clip(CircleShape)
                         .background(priorityColor)
                 )
+            }
+
+            // Steps Checklist (Subtasks)
+            if (subtasks.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 38.dp, top = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    subtasks.forEach { step ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSubtaskToggle(step.id) }
+                        ) {
+                            NeuCheckbox(
+                                checked = step.isCompleted,
+                                onCheckedChange = { onSubtaskToggle(step.id) },
+                                size = 18.dp,
+                                cornerRadius = 5.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = step.title,
+                                fontSize = 13.sp,
+                                textDecoration = if (step.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                color = if (step.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                }
             }
 
             // Expanded action buttons on tap
@@ -454,8 +676,19 @@ private fun TodoItemCard(
 @Composable
 fun TodoEditBottomSheet(
     todo: Todo?,
+    initialList: String = "General",
+    availableLists: List<String> = emptyList(),
     onDismiss: () -> Unit,
-    onSave: (title: String, dueDate: String?, dueTime: String?, priority: Int, recurrence: String, recurrenceDays: String) -> Unit
+    onSave: (
+        title: String,
+        dueDate: String?,
+        dueTime: String?,
+        priority: Int,
+        recurrence: String,
+        recurrenceDays: String,
+        listName: String,
+        subtasksJson: String
+    ) -> Unit
 ) {
     var title by remember { mutableStateOf(todo?.title ?: "") }
     var dueDate by remember { mutableStateOf(todo?.dueDate ?: "") }
@@ -464,6 +697,10 @@ fun TodoEditBottomSheet(
     var recurrence by remember { mutableStateOf(todo?.recurrenceType ?: "NONE") }
     var recurrenceDays by remember { mutableStateOf(todo?.recurrenceDays ?: "") }
     var isRecurrenceExpanded by remember { mutableStateOf(false) }
+
+    var listName by remember { mutableStateOf(todo?.listName ?: if (initialList != "All") initialList else "General") }
+    var subtasks by remember { mutableStateOf(SubtaskHelper.parseSubtasks(todo?.subtasksJson)) }
+    var newStepText by remember { mutableStateOf("") }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -489,7 +726,11 @@ fun TodoEditBottomSheet(
             )
         },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
                 NeuTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -497,6 +738,90 @@ fun TodoEditBottomSheet(
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
+
+                // List / Category Selection
+                Text("List:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(4.dp))
+                NeuTextField(
+                    value = listName,
+                    onValueChange = { listName = it },
+                    placeholder = "List name (e.g. General, Work, Personal)",
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Steps / Subtasks Section
+                Text("Steps / Subtasks:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (subtasks.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        subtasks.forEachIndexed { index, step ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "• ${step.title}",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                NeuIconButton(
+                                    onClick = {
+                                        subtasks = subtasks.filterIndexed { i, _ -> i != index }
+                                    },
+                                    size = 28.dp,
+                                    tint = OverdueRed
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove step",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    NeuTextField(
+                        value = newStepText,
+                        onValueChange = { newStepText = it },
+                        placeholder = "Add a step...",
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    NeuIconButton(
+                        onClick = {
+                            if (newStepText.isNotBlank()) {
+                                subtasks = subtasks + TodoSubtask(title = newStepText.trim())
+                                newStepText = ""
+                            }
+                        },
+                        size = 36.dp,
+                        tint = primaryColor
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Step",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Due Date Picker Button (Bug 4)
                 NeuCard(
@@ -538,7 +863,7 @@ fun TodoEditBottomSheet(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Due Time Picker Button with Clock Dial Picker ("sliding thing of time numbers")
+                // Due Time Picker Button with Clock Dial Picker
                 NeuCard(
                     modifier = Modifier.fillMaxWidth(),
                     cornerRadius = 12.dp,
@@ -756,7 +1081,9 @@ fun TodoEditBottomSheet(
                             dueTime.ifBlank { null },
                             priority,
                             recurrence,
-                            recurrenceDays
+                            recurrenceDays,
+                            listName.ifBlank { "General" },
+                            SubtaskHelper.serializeSubtasks(subtasks)
                         )
                     }
                 },

@@ -12,5 +12,6 @@ data class Note(
     val title: String,
     val content: String,
     val colorHex: String = "#FFF9C4", // soft pastel yellow default
+    val folder: String = "General",   // Folder for organizing notes
     val updatedAt: Long = System.currentTimeMillis()
 )

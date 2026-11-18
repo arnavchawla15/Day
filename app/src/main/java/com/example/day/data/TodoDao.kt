@@ -31,6 +31,9 @@ interface TodoDao {
     @Query("SELECT * FROM todos WHERE isCompleted = 0 ORDER BY priority ASC, dueDate ASC, id DESC")
     suspend fun getActiveTodosSync(): List<Todo>
 
+    @Query("SELECT DISTINCT listName FROM todos WHERE listName IS NOT NULL AND listName != ''")
+    fun getCustomLists(): Flow<List<String>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTodo(todo: Todo): Long
 
